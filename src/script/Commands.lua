@@ -1036,6 +1036,17 @@ function Commands.give_pokemon(ctx, species, level, skipNickname, opts)
     mon.eggSteps = require("src.pokemon.DayCare").eggSteps(ctx.game.data, species)
     skipNickname = true
   end
+  -- Per-character ownership (data.constants.characterBags, docs/
+  -- superpowers/specs/2026-09-19-per-character-backpack-design.md in the
+  -- pokemon-wish repo): only set when a mod declared the roster, so a mon
+  -- created on a cartridge/mod without this feature never carries a field
+  -- nothing else looks at.  Defaults to the active character, then the
+  -- roster's own first entry -- never guesses at a name the roster didn't
+  -- declare.
+  local roster = ctx.game.data.constants and ctx.game.data.constants.characterBags
+  if type(roster) == "table" and roster[1] then
+    mon.owner = (opts and opts.owner) or ctx.save.activeCharacter or roster[1].id
+  end
   ctx.game.stringBuffer = ctx.game.data.pokemon[species].name or species
   ctx.pendingPokemonName = species
   -- GIVEN: a gift, a starter or an egg.  An EGG has no met level yet -- the
