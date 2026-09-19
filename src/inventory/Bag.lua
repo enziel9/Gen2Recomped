@@ -20,6 +20,16 @@
 -- and call site already uses, not a copy, so nothing needs migrating.
 -- Absent constant = today's behavior exactly; every `character` argument
 -- below is accepted but has no effect.
+--
+-- Every function that reaches resolveBag takes `data` explicitly and
+-- threads it through, even the ones that never needed it before this
+-- split (Bag.slots/order/remove).  Skipping it does not raise: resolveBag
+-- falls back to a bare `require("src.core.Data")`, the live singleton --
+-- correct in real gameplay (mods are merged into that singleton before
+-- play starts) but silently wrong for a headless test or the save editor
+-- passing its own isolated dataset, since that dataset's characterBags
+-- roster is invisible to the singleton.  A caller with its own `data` in
+-- hand must always pass it.
 
 local Bag = {}
 
@@ -149,8 +159,8 @@ function Bag.gen3Pockets(data)
   return (type(pockets) == "table" and next(pockets) ~= nil) and pockets or nil
 end
 
-function Bag.slots(save, character)
-  local inv = resolveBag(save, character)
+function Bag.slots(save, character, data)
+  local inv = resolveBag(save, character, data)
   local n = 0
   for id in pairs(inv) do
     if not isBadge(id) then n = n + 1 end
@@ -172,8 +182,8 @@ end
 
 -- Acquisition-ordered id list (wBagItems).  Rebuilt sorted once for
 -- saves from before the order existed, then maintained incrementally.
-function Bag.order(save, character)
-  local inv, container, key = resolveBag(save, character)
+function Bag.order(save, character, data)
+  local inv, container, key = resolveBag(save, character, data)
   local order = container[key]
   if not order then
     order = {}
@@ -233,7 +243,7 @@ function Bag.add(save, id, qty, data, character)
         return false
       end
     else
-      if Bag.slots(save, character) >= Bag.capacity(data) then
+      if Bag.slots(save, character, data) >= Bag.capacity(data) then
         return false
       end
     end
@@ -244,14 +254,14 @@ function Bag.add(save, id, qty, data, character)
   local isNew = not inv[id]
   inv[id] = (inv[id] or 0) + (qty or 1)
   if isNew and not isBadge(id) then
-    table.insert(Bag.order(save, character), id)
+    table.insert(Bag.order(save, character, data), id)
   end
   return true
 end
 
 -- Remove qty (default 1); clears the slot and its order entry at zero.
-function Bag.remove(save, id, qty, character)
-  local inv, container, key = resolveBag(save, character)
+function Bag.remove(save, id, qty, character, data)
+  local inv, container, key = resolveBag(save, character, data)
   inv[id] = (inv[id] or 0) - (qty or 1)
   if inv[id] <= 0 then
     inv[id] = nil
