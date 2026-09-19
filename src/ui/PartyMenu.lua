@@ -473,6 +473,16 @@ function PartyMenu:close()
 end
 
 function PartyMenu:update(dt)
+  -- Observed live (#634): this update firing with self.game already nil --
+  -- StateStack:update always calls straight into whatever is literally on
+  -- top, and Screens.pushWith never reuses a cached instance (every push
+  -- is a fresh factory.new), so this is not a stale/cached PartyMenu --
+  -- something else is landing here with an incomplete self, most likely
+  -- through the same kind of stub/harness path the self.game.data check
+  -- a few lines below this one already anticipates. Same defensive
+  -- posture, one field earlier: skip the frame rather than crash the
+  -- whole game over a screen that has not finished constructing.
+  if not self.game then return end
   -- icon animation counter; 320 = a whole cycle at every HP speed
   self.blink = ((self.blink or 0) + 1) % 320
   -- The bar fill owns the menu while it runs: UpdateHPBar2 is a blocking
