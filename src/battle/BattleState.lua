@@ -8688,6 +8688,33 @@ local function nameX(tx, name)
   return tx * 8 + (n <= 2 and 16 or n <= 4 and 8 or 0)
 end
 
+-- HUD names longer than the box they were sized for (#nnn, "Mega Lucario"):
+-- native Crystal species/nicknames top out at 10-11 glyphs, which is exactly
+-- what fits between a HUD name's x and whatever sits to its right (the front
+-- sprite's 7x7 slot on the enemy side, the screen edge on the player's) at
+-- the font's flat 8px advance.  A custom species with a longer display name
+-- draws past that edge and the front sprite -- drawn AFTER the HUD, so it
+-- wins the overlap -- swallows the tail of the name.
+--
+-- Squeeze horizontally rather than truncate: the retro bitmap font stays
+-- pixel-exact for every name that already fits (scale is 1, this is a no-op),
+-- and only a name that would overflow gets narrower, just enough to clear
+-- `maxRight`.  Only X scales -- squashing Y too would shrink the line height
+-- and open a gap against the row below it.
+local function drawHudName(name, x, y, maxRight)
+  local w = Font.width(name)
+  local budget = maxRight - x
+  if w <= budget or budget <= 0 then
+    Font.draw(name, x, y)
+    return
+  end
+  love.graphics.push()
+  love.graphics.translate(x, y)
+  love.graphics.scale(budget / w, 1)
+  Font.draw(name, 0, 0)
+  love.graphics.pop()
+end
+
 -- Party pokeball row (SetupPokeballs tiles: ball / status ball /
 -- fainted ball / empty), 6 slots stepping dx from (x,y).
 --
@@ -9946,7 +9973,10 @@ function BattleState:drawHUDs(slide)
       love.graphics.translate(hudShake, 0)
     end
     love.graphics.setColor(0, 0, 0, 1)
-    Font.draw(self.enemy.name, nameX(1, self.enemy.name), 0)
+    -- 96 is the front sprite's leftmost possible x (enemyPicXY's hlcoord
+    -- 12,0 slot, hPad >= 0): a name has to clear that, not just the screen
+    -- edge, or its tail draws under the mon's pic.
+    drawHudName(self.enemy.name, nameX(1, self.enemy.name), 0, 96)
     if self.enemy.shownStatus then
       Font.draw(self:statusLabel({ status = self.enemy.shownStatus }), 40, 8)
     else
@@ -10028,7 +10058,9 @@ function BattleState:drawHUDs(slide)
     -- (14,8), HP bar (10,9), HP numbers row 10, underline row 11 with
     -- the tick at (18,10) and the triangle at (9,11)
     love.graphics.setColor(0, 0, 0, 1)
-    Font.draw(self.player.name, nameX(10, self.player.name), 56)
+    -- nothing sits right of the player's name row before the screen edge
+    -- (160): the player's own pic is bottom-left, not in this row's way.
+    drawHudName(self.player.name, nameX(10, self.player.name), 56, 160)
     if self.player.shownStatus then
       Font.draw(self:statusLabel({ status = self.player.shownStatus }), 120, 64)
     else
