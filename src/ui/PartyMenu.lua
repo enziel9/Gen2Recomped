@@ -942,6 +942,7 @@ function PartyMenu:draw()
   end
   local HudTiles = require("src.render.HudTiles")
   local PaletteFX = require("src.render.PaletteFX")
+  local Bag = require("src.inventory.Bag")
   -- Each bar row carries its own GREENBAR / YELLOWBAR / REDBAR zone (see
   -- sgbPalettes), so the fill must stay the raw DMG shade-2 gray and let
   -- the zone color it -- but only when a zone pass will actually run.
@@ -958,6 +959,20 @@ function PartyMenu:draw()
     drawIcon(self.game, mon, 8, y, i == self.index, self.blink or 0)
     love.graphics.setColor(0, 0, 0, 1)
     Font.draw(mon.nickname or def.name, 24, y)
+    -- Per-character ownership marker (docs/superpowers/specs/2026-09-19-
+    -- per-character-backpack-design.md, pokemon-wish repo): a small
+    -- filled square in the icon's bottom-right corner, colored from the
+    -- owner's declared accent (shade 3 of its 4-shade ramp -- the most
+    -- saturated one, shades 1/4 are white/black on every declared
+    -- character). No roster, no mon.owner, or an owner with no declared
+    -- color (PROTAGONIST) all draw nothing -- exactly today's look.
+    local ownerInfo = mon.owner and Bag.characterInfo(mon.owner, self.game.data)
+    if ownerInfo and ownerInfo.color and ownerInfo.color[3] then
+      local shade = ownerInfo.color[3]
+      love.graphics.setColor(shade[1] / 255, shade[2] / 255, shade[3] / 255, 1)
+      love.graphics.rectangle("fill", 20, y + 12, 4, 4)
+      love.graphics.setColor(0, 0, 0, 1)
+    end
     -- An EGG shows only its name: it has no level, HP bar or status until it
     -- hatches (CheckFirstMonIsEgg gates every one of those on the party
     -- screen).
