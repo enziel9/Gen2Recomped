@@ -310,12 +310,21 @@ function Music.play(data, song, loop, ctx)
   -- below has to compare against
   if not song or song == state.current then return end
   local def = songDef(data, song)
-  if not def or state.failed[song] then return end
+  -- A song that cannot be resolved or started must not leave whatever was
+  -- already playing (a battle theme, a jingle) stuck running forever: the
+  -- normal stop-and-swap below never runs on this branch, and callers like
+  -- Music.restoreMap have no other chance to silence the old track. Live
+  -- bug (2026-09-19): a mod's map song had a bad file path, failed once at
+  -- boot, and Music.play's failed-def latch made every later restoreMap()
+  -- after a battle silently no-op here -- so the battle music never
+  -- stopped, instead of the map theme (or silence) taking its place.
+  if not def or state.failed[song] then Music.stop() return end
   local wantLoop = loop ~= false
   local src, loopSrc, isChip, err = startSong(data, def, wantLoop)
   if not src then
     state.failed[song] = true
     reportBadDef(data, song, err)
+    Music.stop()
     return
   end
   stopSource(state.source)
