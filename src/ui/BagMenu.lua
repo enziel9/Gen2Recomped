@@ -35,15 +35,16 @@ local function pocketOf(def, id)
 end
 
 -- acquisition order like wBagItems (Bag.order), not alphabetical
-local function buildItems(game, pocket)
+local function buildItems(game, pocket, character)
   local items = {}
-  for _, id in ipairs(Bag.order(game.save)) do
+  local inv = Bag.inventory(game.save, game.data, character)
+  for _, id in ipairs(Bag.order(game.save, game.data, character)) do
     local def = game.data.items[id]
     if not pocket or pocketOf(def, id) == pocket then
       table.insert(items, {
         value = id,
         label = def and def.name or id,
-        right = "x" .. game.save.inventory[id],
+        right = "x" .. inv[id],
       })
     end
   end
@@ -647,13 +648,16 @@ local PACK_PALS = {
   { { 255, 255, 255 }, { 58, 156, 58 }, { 58, 156, 58 }, { 0, 0, 0 } },
 }
 
-local function packPalettes()
+local function packPalettes(nameBoxColor)
   local P = require("src.render.PaletteFX")
   return {
     P.whole(PACK_PALS[1]),
     P.zone(PACK_PALS[2], 0, 0, 9, 0),
     P.zone(PACK_PALS[3], 10, 0, 19, 0),
-    P.zone(PACK_PALS[4], 7, 2, 7, 10),
+    -- the pocket-name box: a declared character color replaces the
+    -- default here and nowhere else, so the rest of the screen (cursor,
+    -- header, pack picture) stays the same regardless of whose bag this is
+    P.zone(nameBoxColor or PACK_PALS[4], 7, 2, 7, 10),
     P.zone(PACK_PALS[5], 0, 7, 4, 9),
     P.zone(PACK_PALS[6], 0, 3, 4, 5),
   }
@@ -662,6 +666,14 @@ end
 function BagMenu.new(game, opts)
   opts = opts or {}
   local battle = opts.battle
+  -- Per-character backpack (docs/superpowers/specs/2026-09-19-per-
+  -- character-backpack-design.md, pokemon-wish repo). nil when no roster
+  -- is declared, or when opts.character itself is nil -- Bag.lua's own
+  -- resolveBag falls back to save.activeCharacter/PROTAGONIST either way,
+  -- so charInfo staying nil here just means "use the classic pocket title
+  -- and palette", not an error state.
+  local character = opts.character
+  local charInfo = Bag.characterInfo(character or game.save.activeCharacter, game.data)
   local list
   -- Gen2 pages the pack; Gen1's bag is one flat list (pocket = nil)
   local gen2 = require("src.core.GameVersion").isGen2()
@@ -670,18 +682,22 @@ function BagMenu.new(game, opts)
     return pocketIndex and POCKETS[pocketIndex].key or nil
   end
   local function refresh(l)
-    l.items = buildItems(game, pocketKey())
+    l.items = buildItems(game, pocketKey(), character)
     l.index = math.min(l.index, math.max(1, #l.items))
     l.scroll = 0
   end
-  list = ListMenu.new(game, pocketIndex and POCKETS[pocketIndex].title or "ITEMS",
-    buildItems(game, pocketKey()), {
+  local function titleFor(pIdx)
+    if charInfo and charInfo.name then return charInfo.name .. " zaino" end
+    return pIdx and POCKETS[pIdx].title or "ITEMS"
+  end
+  list = ListMenu.new(game, titleFor(pocketIndex),
+    buildItems(game, pocketKey(), character), {
     kind = "bag",
     pocketIndex = pocketIndex and (pocketIndex - 1) or 0,
     onPocketSwitch = pocketIndex and function(l, delta)
       pocketIndex = ((pocketIndex - 1 + delta) % #POCKETS) + 1
       l.pocketIndex = pocketIndex - 1
-      l.title = POCKETS[pocketIndex].title
+      l.title = titleFor(pocketIndex)
       l.swapIndex = nil
       l.index = 1
       refresh(l)
@@ -823,7 +839,9 @@ function BagMenu.new(game, opts)
         or { tx = 13, ty = 10, tw = 7, th = th }))
     end,
   })
-  if gen2 then list.sgbPalettes = packPalettes end
+  if gen2 then
+    list.sgbPalettes = function() return packPalettes(charInfo and charInfo.color) end
+  end
   return list
 end
 
