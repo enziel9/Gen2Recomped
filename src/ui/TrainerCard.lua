@@ -137,7 +137,7 @@ end
 local function hasKantoBadge(game)
   local list = Badges.list(game.data)
   for i = PER_PAGE + 1, #list do
-    if Badges.has(game.save, list[i]) then return true end
+    if Badges.has(game.save, list[i], game.data) then return true end
   end
   return false
 end
@@ -271,7 +271,7 @@ function TrainerCard:drawGen2()
       love.graphics.draw(self.slots.img, self.slots.plate[i - 1], x, y)
       love.graphics.draw(self.slots.img, self.slots.face[i - 1], x + 8, y)
     end
-    if Badges.has(save, badges[i]) and self.marks and self.marks.quads[i - 1] then
+    if Badges.has(save, badges[i], self.game.data) and self.marks and self.marks.quads[i - 1] then
       love.graphics.draw(self.marks.img, self.marks.quads[i - 1], x, y + 8)
     end
     -- the slot art already carries that leader's own palette
@@ -329,7 +329,7 @@ function TrainerCard:draw()
     end
     if self.faces and self.faces.quads[i - 1] then
       love.graphics.setColor(1, 1, 1, 1)
-      local sheet = Badges.has(save, badges[i]) and self.badges or self.faces
+      local sheet = Badges.has(save, badges[i], self.game.data) and self.badges or self.faces
       love.graphics.draw(sheet.img, sheet.quads[i - 1], tx + 4, ty + 6)
     end
   end

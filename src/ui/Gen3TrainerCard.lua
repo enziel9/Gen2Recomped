@@ -357,7 +357,7 @@ function Gen3TrainerCard:drawBadges()
   local game = self.game
   local list = Badges.list(game.data)
   for i, entry in ipairs(list) do
-    if Badges.has(game.save, entry) then
+    if Badges.has(game.save, entry, game.data) then
       local x, y = (BADGE_FIRST_TX + (i - 1) * BADGE_STEP_TX) * 8, BADGE_TY * 8
       local image = Gen3BadgeArt.image(game.data, i)
       if image then

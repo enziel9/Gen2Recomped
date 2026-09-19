@@ -102,8 +102,13 @@ end
 
 local function deposit(game)
   local pc = game.save.pcItems
-  local inv = game.save.inventory
   local Bag = require("src.inventory.Bag")
+  -- Resolved ONCE, up front: the list has to be read from the exact same
+  -- character's bag that the Bag.remove call below will actually target
+  -- (both default to save.activeCharacter), or the PC gains a copy of an
+  -- item the deposit never actually removed from the carrying character.
+  local character = game.save.activeCharacter
+  local inv = Bag.inventory(game.save, game.data, character)
   -- badges live in save.inventory alongside items but are not depositable
   local depositable = {}
   for id, count in pairs(inv) do
@@ -118,7 +123,7 @@ local function deposit(game)
           list.footer = Strings("No room left to\nstore items.")
           return
         end
-        require("src.inventory.Bag").remove(game.save, item.value, qty)
+        Bag.remove(game.save, item.value, qty, game.data, character)
         pc[item.value] = (pc[item.value] or 0) + qty
         refreshRow(list, inv, item.value)
         Sound.play(game.data, "Withdraw_Deposit")

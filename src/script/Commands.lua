@@ -314,7 +314,8 @@ function Commands.check_flag(ctx, name)
 end
 
 function Commands.check_item(ctx, itemId)
-  ctx.lastCheck = (ctx.save.inventory[itemId] or 0) > 0
+  local inv = require("src.inventory.Bag").inventory(ctx.save, ctx.game.data)
+  ctx.lastCheck = (inv[itemId] or 0) > 0
 end
 
 -- check_dex_owned <n>: lastCheck = the player owns at least n species
@@ -420,15 +421,15 @@ end
 -- Mound Cave's `takeitem DYNAMITE, 5 / siffalse` is the case that shows it --
 -- the "there is still dynamite in the cave" arm was unreachable.
 function Commands.take_item(ctx, itemId, count)
-  local inv = ctx.save.inventory
+  local Bag = require("src.inventory.Bag")
+  local inv = Bag.inventory(ctx.save, ctx.game.data)
   local want = count or 1
   local held = inv[itemId] or 0
   if held < want then
     ctx.lastCheck = false
     return
   end
-  inv[itemId] = held - want
-  if inv[itemId] == 0 then inv[itemId] = nil end
+  Bag.remove(ctx.save, itemId, want, ctx.game.data)
   ctx.lastCheck = true
 end
 

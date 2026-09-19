@@ -1833,9 +1833,9 @@ function Commands.g2_pocket_full(ctx)
   -- give_item's Bag.add enforces the real per-pocket limit.
   local save = ctx.save
   local data = ctx.game and ctx.game.data or nil
-  local full = Bag.pocketSlots(save, "ITEM",     data) >= 20
-            or Bag.pocketSlots(save, "BALL",     data) >= 20
-            or Bag.pocketSlots(save, "KEY_ITEM", data) >= 20
+  local full = Bag.pocketSlots(save, "ITEM",     data) >= Bag.pocketCapacity("ITEM", data)
+            or Bag.pocketSlots(save, "BALL",     data) >= Bag.pocketCapacity("BALL", data)
+            or Bag.pocketSlots(save, "KEY_ITEM", data) >= Bag.pocketCapacity("KEY_ITEM", data)
   ctx.g2Var = full and 1 or 0
   ctx.lastCheck = full
 end
@@ -2887,9 +2887,10 @@ function Commands.g2_select_apricorn(ctx)
   -- SelectApricornForKurt zeroes wKurtApricornQuantity on entry, so a
   -- cancelled pick cannot leave the previous count standing.
   save.g2KurtApricorns = 0
+  local inv = Bag.inventory(save, game.data)
   for _, id in ipairs(APRICORNS) do
     local key = string.format("ITEM_%03d", id)
-    local qty = save.inventory and save.inventory[key] or 0
+    local qty = inv[key] or 0
     if qty > 0 then
       local def = game.data.items and game.data.items[key]
       items[#items + 1] = {
@@ -2938,7 +2939,7 @@ function Commands.g2_select_apricorn(ctx)
     runner:yield()
   end
   count = math.max(1, math.min(count, held))
-  Bag.remove(save, string.format("ITEM_%03d", picked), count)
+  Bag.remove(save, string.format("ITEM_%03d", picked), count, game.data)
   save.g2KurtApricorns = count
   ctx.g2Var, ctx.lastCheck = picked, true
 end
@@ -4115,7 +4116,7 @@ end
 -- Gen2 bag keys are ITEM_%03d after extract; scripts also check named ids.
 -- pret item_constants: PASS $86, POKE_FLUTE $38, MACHINE_PART $80, LOST_ITEM $82.
 local function inventoryHas(save, data, candidates)
-  local inv = save and save.inventory or {}
+  local inv = save and require("src.inventory.Bag").inventory(save, data) or {}
   for _, id in ipairs(candidates) do
     local qty = inv[id]
     if type(qty) == "number" and qty > 0 then return true end
@@ -4877,9 +4878,10 @@ end
 -- pocket has room for a new stack, or already holds fewer than 95 of it.
 local function towerRewardFits(ctx, itemId)
   local save = ctx.save
-  local have = save.inventory and save.inventory[itemId]
+  local Bag = require("src.inventory.Bag")
+  local have = Bag.inventory(save, ctx.game.data)[itemId]
   if have then return have < 95 end
-  return require("src.inventory.Bag").pocketSlots(save, "ITEM", ctx.game.data) < 20
+  return Bag.pocketSlots(save, "ITEM", ctx.game.data) < Bag.pocketCapacity("ITEM", ctx.game.data)
 end
 
 -- constants/battle_tower_constants.asm: the answer CheckGSBall gives when the

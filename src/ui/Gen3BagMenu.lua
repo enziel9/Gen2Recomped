@@ -319,7 +319,8 @@ function Gen3BagMenu:rebuild()
   end
   local want = self.pockets[self.pocket].key
   local rows = {}
-  for _, id in ipairs(Bag.order(game.save)) do
+  local inventory = Bag.inventory(game.save, game.data)
+  for _, id in ipairs(Bag.order(game.save, game.data)) do
     local def = game.data.items and game.data.items[id]
     if pocketOf(def, id) == want then
       rows[#rows + 1] = {
@@ -330,7 +331,7 @@ function Gen3BagMenu:rebuild()
         -- and what Bag.add and Bag.remove write -- so every quantity read
         -- here came back nil and Emerald's bag showed no "x3" against
         -- anything at all.
-        qty = (game.save.inventory or {})[id],
+        qty = inventory[id],
         description = def and (def.description or def.desc),
       }
     end
@@ -498,9 +499,9 @@ function Gen3BagMenu:depositItem(id)
   if self:pcFull(id) then
     return self:tell(bagWord(game, "noRoomStore"))
   end
-  local held = (game.save.inventory or {})[id] or 1
+  local held = Bag.inventory(game.save, game.data)[id] or 1
   self:askQuantity(id, held, bagWord(game, "depositPrompt"), function(qty, name)
-    Bag.remove(game.save, id, qty)
+    Bag.remove(game.save, id, qty, game.data)
     game.save.pcItems = game.save.pcItems or {}
     game.save.pcItems[id] = (game.save.pcItems[id] or 0) + qty
     self:rebuild()
@@ -723,7 +724,7 @@ function Gen3BagMenu:toss(id)
   local name = (def and def.name) or id
   local QuantityBox = require("src.ui.QuantityBox")
   local TextBox = require("src.render.TextBox")
-  local held = (game.save.inventory or {})[id] or 1
+  local held = Bag.inventory(game.save, game.data)[id] or 1
   local function fill(text)
     return (text:gsub("{VAR1}", name):gsub("{VAR2}", name)
                 :gsub("{STR_VAR1}", name):gsub("{STR_VAR2}", name))
@@ -739,7 +740,7 @@ function Gen3BagMenu:toss(id)
       game.stack:push(TextBox.new(game, fill(ask), nil, {
         choice = function(yes)
           if not yes then return end
-          Bag.remove(game.save, id, qty)
+          Bag.remove(game.save, id, qty, game.data)
           self:rebuild()
           local said = cartridgeLine(game, "tossed")
                        or Strings("Threw away\n%s.", name)

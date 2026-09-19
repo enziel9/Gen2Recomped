@@ -830,7 +830,7 @@ function PartyMenu:update(dt)
           local function badged(moveId)
             local gate = gates[moveId]
             if not (gate and gate.badge) then return true end
-            return Badges.has(self.game.save, { id = gate.badge })
+            return Badges.has(self.game.save, { id = gate.badge }, self.game.data)
           end
           for _, mv in ipairs(mon.moves) do
             if mv.id == "FLY" and outside and badged("FLY") then
@@ -943,6 +943,11 @@ function PartyMenu.entryY(i)
 end
 
 function PartyMenu:draw()
+  -- Same defensive posture as :update (commit 02723e6): if self.game can
+  -- arrive nil on an update frame, an unguarded draw is just the same
+  -- crash one frame later, landing here instead and misdirecting blame at
+  -- whatever draws last (the owner-marker code below).
+  if not self.game then return end
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.rectangle("fill", 0, 0, 160, 144)
   love.graphics.setColor(0, 0, 0, 1)

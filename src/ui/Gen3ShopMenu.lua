@@ -169,12 +169,13 @@ function Gen3ShopMenu:rebuild()
   local game = self.game
   local rows = {}
   if self.mode == "sell" then
-    for _, id in ipairs(Bag.order(game.save)) do
+    local inventory = Bag.inventory(game.save, game.data)
+    for _, id in ipairs(Bag.order(game.save, game.data)) do
       local def = game.data.items and game.data.items[id]
       rows[#rows + 1] = {
         id = id,
         label = (def and def.name) or id,
-        right = Strings("x%d", (game.save.inventory or {})[id] or 1),
+        right = Strings("x%d", inventory[id] or 1),
         description = def and (def.description or def.desc),
         unit = sellPriceOf(def),
         blocked = unsellable(game, id, def),
@@ -564,7 +565,7 @@ function Gen3ShopMenu.sellItem(game, id, host)
     return
   end
   local unit = math.max(0, sellPriceOf(def))
-  local held = (game.save.inventory or {})[id] or 1
+  local held = Bag.inventory(game.save, game.data)[id] or 1
   local TextBox = require("src.render.TextBox")
   local ask = (host and host.ask) or function(opts)
     -- no host dialogue of its own: the Game Boy box, which is what the bag
@@ -591,7 +592,7 @@ function Gen3ShopMenu.sellItem(game, id, host)
         choice = function(yes)
           if not yes then return end
           game.save.money = (tonumber(game.save.money) or 0) + paid
-          Bag.remove(game.save, id, qty)
+          Bag.remove(game.save, id, qty, game.data)
           if host and host.refresh then host.refresh() end
           say(line(game, "sold", Strings("Thank you!"),
                    { VAR1 = tostring(paid), VAR2 = label }))
@@ -797,7 +798,7 @@ function Gen3ShopMenu:draw()
       have = require("src.world.Gen3Decorations")
              .count(self.game.save, ask.row.id)
     else
-      have = (self.game.save.inventory or {})[ask.row.id] or 0
+      have = Bag.inventory(self.game.save, self.game.data)[ask.row.id] or 0
     end
     local inBag = line(self.game, "inBag", Strings("IN BAG: %d", have),
                        { VAR1 = tostring(have) })
