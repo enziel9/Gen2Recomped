@@ -34,6 +34,7 @@ local Targeting = require("src.battle.Targeting")
 local TypeChart = require("src.battle.TypeChart")
 local Strings = require("src.core.Strings")
 local Weather = require("src.battle.Weather")
+local Gen3Weather = require("src.world.Gen3Weather")
 local WideBattle = require("src.battle.WideBattle")
 local Gen3Battle = require("src.battle.Gen3Battle")
 local GameVersion = require("src.core.GameVersion")
@@ -8792,6 +8793,59 @@ function BattleState:drawBallRow(party, x, y, dx)
   if shader then love.graphics.setShader() end
 end
 
+-- THE BALL OPENING, MADE TO LOOK LIKE ONE.
+--
+-- growInScale's three quantized stages, right below, are the cartridge's
+-- own animation (AnimateSendingOutMon) and stay exactly as ported -- real
+-- GB games grow a sent-out Pokemon in three discrete steps, not smoothly,
+-- and that mechanic is not what "riusciamo a dare un effetto piu cool alle
+-- pokeball" is asking to change.  What the hardware never had is a LIGHT:
+-- no GPU, no additive blending, nothing to burst.  This draws that burst --
+-- a white flash blooming and fading at the ball's own opening point, with a
+-- handful of sparkles thrown out from it -- behind the pic that is already
+-- growing there, timed off the same self.growIn.frame the scale stages
+-- read so it never drifts out of sync with the pic it belongs to.
+local SEND_OUT_SPARKLES = 6
+function BattleState:drawSendOutBurst(cx, cy)
+  local grow = self.growIn
+  if not grow then return end
+  local f = grow.frame
+  -- frames 0-2 are the ball beat (AnimateSendingOutMon's own three ball
+  -- frames, no pic on screen yet); the flash starts the instant the pic
+  -- starts growing and is out again well before growIn ends at frame 12
+  if f < 2 or f > 10 then return end
+  local t = (f - 2) / 8 -- 0..1 across the flash's own window
+  local g = love.graphics
+  local r, gg, b, a = g.getColor()
+  g.setBlendMode("add")
+  local ringR = 3 + t * 15
+  local ringA = (1 - t) * 0.7
+  if ringA > 0.01 then
+    g.setColor(1, 0.98, 0.85, ringA)
+    g.circle("fill", cx, cy, ringR * 0.5)
+    g.setColor(1, 1, 1, ringA * 0.6)
+    g.circle("fill", cx, cy, ringR)
+  end
+  -- a handful of small diamonds thrown out from the flash at fixed angles,
+  -- so they read as a burst rather than noise, fading as they travel
+  local sparkleA = math.max(0, 1 - t * 1.3)
+  if sparkleA > 0.01 then
+    g.setColor(1, 1, 0.9, sparkleA)
+    for i = 1, SEND_OUT_SPARKLES do
+      local ang = (i / SEND_OUT_SPARKLES) * 2 * math.pi + 0.4
+      local dist = 4 + t * 16
+      -- flattened vertically: the burst sits at the mon's feet, on the
+      -- ground, not floating in a sphere around it
+      local px = cx + math.cos(ang) * dist
+      local py = cy + math.sin(ang) * dist * 0.5
+      local sz = 1.6 * (1 - t * 0.5)
+      g.polygon("fill", px, py - sz, px + sz, py, px, py + sz, px - sz, py)
+    end
+  end
+  g.setBlendMode("alpha")
+  g.setColor(r, gg, b, a)
+end
+
 -- the grow-in scale for a battler's pic this frame: nil when not
 -- growing, else 0 (ball beat) / 3/7 / 5/7 -- AnimateSendingOutMon's
 -- stages (core.asm:6801-6838): 3 frames of the ball tile, 4 frames of
@@ -9088,6 +9142,27 @@ function BattleState:gen3AnimSquash(battler)
   return sx, sy
 end
 
+-- IDLE MOTION.  drawMonAnimated above plays Crystal's front-pic frame swap
+-- and Emerald's one-shot send-out squash/hop/glow (MonAnim, next door) --
+-- and neither one loops, so a Gold/Silver battler (no picAnim, no monAnim at
+-- all) and an Emerald one once its send-out finishes both sit dead still for
+-- the rest of the turn.  Reported from play: "le sprite dei pokemon sono
+-- statiche, non si muovono" -- true for every generation this port battles
+-- in once the send-out is over.
+--
+-- A continuous vertical bob, phased half a cycle apart by side so the two
+-- mons are not breathing in lockstep, gives every species that motion
+-- without sourcing per-species animated frame data -- this cache has none
+-- for Gen 1/2, and hand-picking one of MonAnim's shapes per Gen 3 species
+-- would still leave the other two generations static.
+local IDLE_BOB_PERIOD, IDLE_BOB_AMP = 90, 1.4
+function BattleState:idleBobDy(battler)
+  if not battler or (self.introSlide or 0) > 0 then return 0 end
+  local phase = battler.isPlayer and 0 or (IDLE_BOB_PERIOD * 0.5)
+  local u = (((self.frame or 0) + phase) % IDLE_BOB_PERIOD) / IDLE_BOB_PERIOD
+  return math.sin(u * 2 * math.pi) * IDLE_BOB_AMP
+end
+
 function BattleState:drawBattlerPic(battler, x, y, scale)
   local angle, rise = self:gen3AnimRotate(battler)
   local sqx, sqy = self:gen3AnimSquash(battler)
@@ -9191,6 +9266,7 @@ function BattleState:drawBattlerPicAt(battler, x, y, scale)
   if not pf or (not pf.kind and not pf.hidden and not pf.minimized
                 and (pf.ox or 0) == 0 and (pf.oy or 0) == 0) then
     if self:drawStadiumBattlerPic(battler, img, x, y, scale) then return end
+    y = y + self:idleBobDy(battler)
     local tr, tg, tb, tc = self:gen3AnimTint(battler)
     if tc then
       local cr, cg, cb, ca = love.graphics.getColor()
@@ -9757,6 +9833,8 @@ function BattleState:drawPicsLayer(slide, sx, sy, onlySide, skipMenuClip)
           dx, dy = BattleState.frontPlacement(ex, ey,
             img:getWidth(), img:getHeight(), eff)
         end
+        self:drawSendOutBurst(ex + img:getWidth() * s / 2,
+                              ey + img:getHeight() * s)
         love.graphics.draw(img, dx, dy, 0, eff, eff)
       end
     elseif self:gen3BallFor(self.enemy)
@@ -9860,6 +9938,8 @@ function BattleState:drawPicsLayer(slide, sx, sy, onlySide, skipMenuClip)
       -- pinned, mod scale composed with the grow stage
       local eff = s * gs
       if eff > 0 then
+        self:drawSendOutBurst(8 - padL * s + img:getWidth() * s / 2 + sx,
+                              96 + sy)
         love.graphics.draw(img,
           8 - padL * s + img:getWidth() * s * (1 - gs) / 2 + sx,
           96 - (img:getHeight() - pad) * eff + sy, 0, eff, eff)
@@ -10279,6 +10359,34 @@ function BattleState:drawBattleField()
   -- draw, where it has always been
 end
 
+-- WEATHER, DRAWN.  The classic screen models Rain Dance/Sunny Day/Sandstorm
+-- for damage and accuracy (Weather.current) but never painted any of it --
+-- "in battle when there are weather effects theyre not showing properly" was
+-- Gen 3's version of this same bug, fixed by wiring Weather.current into
+-- src.world.Gen3Weather, the field's own particle renderer, rather than
+-- building a second one (Gen3Battle.drawWeather).  Gen 2's battle weather is
+-- already one of the names that renderer understands -- GEN2_WEATHER_BATTLE
+-- (OverworldController.lua) feeds Weather.start the same RAIN/SUN/SANDSTORM
+-- strings Gen3Weather.forBattle's own fallback table maps by name -- so this
+-- is that same wiring pointed at the classic 160x144 field instead of
+-- Emerald's wide one, no ROM battle-weather table required.
+function BattleState:drawClassicWeather(sx, sy)
+  local current = Weather.current(self)
+  if not current then return end
+  local name = Gen3Weather.forBattle(current, nil)
+  if not name then return end
+  local g = love.graphics
+  local shifted = (sx or 0) ~= 0 or (sy or 0) ~= 0
+  if shifted then g.push() g.translate(sx, sy) end
+  g.setColor(1, 1, 1, 1)
+  -- 96 rather than the full 144: the pics live in rows 0-11 (see the pics
+  -- scissor below) and the weather is the same "over the field, under the
+  -- text box" layer Gen 3's is.
+  pcall(Gen3Weather.draw, name, self.frame or 0, 160, 96)
+  g.setColor(1, 1, 1, 1)
+  if shifted then g.pop() end
+end
+
 function BattleState:drawClassic()
   -- AskName: ClearSprites + wild ClearScreenArea -- white field under the
   -- nickname TextBox / YES/NO (naming_screen.asm); overlays draw on top.
@@ -10348,6 +10456,7 @@ function BattleState:drawClassic()
       end
       if shifted then g.pop() end
     end
+    self:drawClassicWeather(sx, sy)
     if not wavy then
       -- the pics are BG tiles in rows 0-11 on the GB: they can never
       -- cover the text box, whatever the SE offsets do (a vertical
@@ -10370,6 +10479,7 @@ function BattleState:drawClassic()
       love.graphics.push()
       love.graphics.translate(sx, sy)
     end
+    self:drawClassicWeather(0, 0)
     self:drawPicsLayer(slide, 0, 0)
     self:drawHUDs(slide)
     self:drawAnimLayer(false)
