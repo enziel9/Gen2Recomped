@@ -151,14 +151,19 @@ end
 
 -- A real walk-cycle overworld sheet (six 16x16 stand/walk frames) exists
 -- only for Yellow's Pikachu -- SPRITE_PIKACHU, ripped from the cartridge.
--- Nothing else, including every one of the mod's custom species, ships one.
--- For everything else this synthesizes a single-frame "sprite" out of the
--- species' own front battle pic: SpriteRenderer already draws a `frames <=
--- 1` sheet as one fixed pose with no walk cycle (the same path an item ball
--- or fossil takes), so no renderer change is needed, and going through
--- Sprites.path means the follower inherits the exact same trueColor flag
--- battle already resolves for that species -- the same fix that corrected
--- the 185 custom species' battle palettes applies here for free (#571).
+-- For everything else this looks for a dedicated single-frame overworld pic
+-- next to the species' own art (assets/pokemon/<SPECIES>/overworld.png,
+-- e.g. Tepig's #571 follow-up): a small, correctly-scaled pose meant to
+-- stand next to a 16x16 player/NPC.  Nothing else has one yet -- 184 of the
+-- 185 custom species still fall back to the species' front battle pic, the
+-- ORIGINAL #571 placeholder, which is a 48x48 canvas of detailed battle art
+-- and reads as comically oversized next to the player (confirmed on Tepig).
+-- Either way SpriteRenderer already draws a `frames <= 1` sheet as one
+-- fixed pose with no walk cycle (the same path an item ball or fossil
+-- takes), so no renderer change is needed, and going through Sprites.path
+-- means a battle-pic fallback still inherits the same trueColor flag battle
+-- already resolves for that species -- the fix that corrected the 185
+-- custom species' battle palettes applies here for free too (#571).
 -- Synthesized once per species and cached on game.data.sprites.
 local function followerSpriteId(game, species)
   if species == "PIKACHU" and game.data.sprites
@@ -173,7 +178,13 @@ local function followerSpriteId(game, species)
   local path, trueColor = Sprites.path(game.data, species, "front",
                                        { kind = "overworld" })
   if not path then return nil end
-  local image = require("src.render.Assets").image(path)
+  local Assets = require("src.render.Assets")
+  local dir = path:match("(.*/)")
+  local dedicated = dir and (dir .. "overworld.png")
+  if dedicated and Assets.exists(dedicated) then
+    path = dedicated
+  end
+  local image = Assets.image(path)
   local w, h = image:getDimensions()
   sprites[id] = {
     id = id, image = path, frames = 1, walker = false,
