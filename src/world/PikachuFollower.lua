@@ -150,20 +150,25 @@ local function shouldSpawn(game, ow)
 end
 
 -- A real walk-cycle overworld sheet (six 16x16 stand/walk frames) exists
--- only for Yellow's Pikachu -- SPRITE_PIKACHU, ripped from the cartridge.
--- For everything else this looks for a dedicated single-frame overworld pic
--- next to the species' own art (assets/pokemon/<SPECIES>/overworld.png,
--- e.g. Tepig's #571 follow-up): a small, correctly-scaled pose meant to
--- stand next to a 16x16 player/NPC.  Nothing else has one yet -- 184 of the
--- 185 custom species still fall back to the species' front battle pic, the
--- ORIGINAL #571 placeholder, which is a 48x48 canvas of detailed battle art
--- and reads as comically oversized next to the player (confirmed on Tepig).
--- Either way SpriteRenderer already draws a `frames <= 1` sheet as one
--- fixed pose with no walk cycle (the same path an item ball or fossil
--- takes), so no renderer change is needed, and going through Sprites.path
--- means a battle-pic fallback still inherits the same trueColor flag battle
--- already resolves for that species -- the fix that corrected the 185
--- custom species' battle palettes applies here for free too (#571).
+-- for Yellow's Pikachu -- SPRITE_PIKACHU, ripped from the cartridge -- and,
+-- as of this fix, for Tepig (assets/pokemon/TEPIG/overworld.png, redrawn
+-- from rh-hideout/pokeemerald-expansion's chibi OW sprite; the walkCycle
+-- check below is what turns a matching dedicated sheet into a real
+-- SPRITE_PIKACHU-style walker instead of a fixed pose).  For every other
+-- species this looks for a dedicated overworld pic next to the species' own
+-- art (assets/pokemon/<SPECIES>/overworld.png): if it isn't the 16x96
+-- walk-cycle size it is loaded as a single fixed pose, a small correctly-
+-- scaled stand-in meant to stand next to a 16x16 player/NPC.  Nothing else
+-- has a dedicated pic yet, so the rest of the custom species still fall back
+-- to the species' front battle pic, the ORIGINAL #571 placeholder, which is
+-- a 48x48 canvas of detailed battle art and reads as comically oversized
+-- next to the player.  Either way SpriteRenderer already draws a
+-- `frames <= 1` sheet as one fixed pose with no walk cycle (the same path an
+-- item ball or fossil takes), so no renderer change was needed for that
+-- fallback tier, and going through Sprites.path means a battle-pic fallback
+-- still inherits the same trueColor flag battle already resolves for that
+-- species -- the fix that corrected the 185 custom species' battle palettes
+-- applies here for free too (#571).
 -- Synthesized once per species and cached on game.data.sprites.
 local function followerSpriteId(game, species)
   if species == "PIKACHU" and game.data.sprites
@@ -181,14 +186,25 @@ local function followerSpriteId(game, species)
   local Assets = require("src.render.Assets")
   local dir = path:match("(.*/)")
   local dedicated = dir and (dir .. "overworld.png")
+  local usedDedicated = false
   if dedicated and Assets.exists(dedicated) then
     path = dedicated
+    usedDedicated = true
   end
   local image = Assets.image(path)
   local w, h = image:getDimensions()
+  -- A dedicated overworld sheet at exactly the walk-cycle size -- 16x16 per
+  -- frame, six frames stacked vertically in SPRITE_PIKACHU's own order
+  -- (stand-down/up/left, walk-down/up/left, right auto-mirrored) -- gets the
+  -- real walk cycle, same as Yellow's Pikachu. Anything else (a single pose,
+  -- or the old scaled-down battle-pic mistake) keeps the frames = 1 fallback
+  -- SpriteRenderer already draws as one fixed pose (#571 follow-up).
+  local walkCycle = usedDedicated and w == 16 and h == 96
   sprites[id] = {
-    id = id, image = path, frames = 1, walker = false,
-    trueColor = trueColor, frameWidth = w, frameHeight = h,
+    id = id, image = path,
+    frames = walkCycle and 6 or 1, walker = walkCycle,
+    trueColor = trueColor,
+    frameWidth = walkCycle and 16 or w, frameHeight = walkCycle and 16 or h,
   }
   return id
 end
