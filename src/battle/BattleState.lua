@@ -855,9 +855,12 @@ local function makeBattler(data, mon, isPlayer, save)
     -- animation tiles, so the player's back pic has none -- and Gold and
     -- Silver have none at all, where this stays nil and the pic holds still.
     -- forMon rather than new: a shiny Gen 3 Pokemon animates from its own
-    -- strip, and only the Pokemon can say whether it is one
-    picAnim = (not isPlayer)
-      and require("src.pokemon.PicAnim").forMon(data, mon) or nil,
+    -- strip, and only the Pokemon can say whether it is one.
+    -- The SIDE is asked for rather than gated on: a ROM-imported species has
+    -- no picAnimBack, so the player's own pic still resolves to nil exactly
+    -- as it did, while a mod that ships back-pic frames gets both sides.
+    picAnim = require("src.pokemon.PicAnim").forMon(data, mon,
+      isPlayer and "back" or "front"),
     -- Emerald's procedural front-pic animation -- the squash/hop/glow the
     -- sprite itself does when it appears.  Front pic only, same as above.
     monAnim = (not isPlayer)
@@ -5711,9 +5714,8 @@ function BattleState:applyAnimEffect(ev)
       -- a Transformed mon wears the copied species' pic, animation included
       -- (still gray: speciesSprite forces PAL_GRAYMON, and the frames go
       -- through the same palette because battlerPic reuses the pic's meta)
-      user.picAnim = (not user.isPlayer)
-        and require("src.pokemon.PicAnim").new(self.data, target.mon.species)
-        or nil
+      user.picAnim = require("src.pokemon.PicAnim").new(self.data,
+        target.mon.species, user.isPlayer and "back" or "front")
       local pf = self:picFxFor(user)
       if pf then pf.minimized = nil end
     end
@@ -9155,9 +9157,17 @@ end
 -- without sourcing per-species animated frame data -- this cache has none
 -- for Gen 1/2, and hand-picking one of MonAnim's shapes per Gen 3 species
 -- would still leave the other two generations static.
+--
+-- ...but a pic that HAS looping frames of its own does not want it.  A Gen 5
+-- sprite already breathes inside its own strip, and adding this on top gives
+-- it a second, slower bob beating against the authored one.  A looping record
+-- is the only thing that opts out; every settle-on-frame-0 record (all the
+-- ROM-imported ones) keeps the bob, which is what it was written for.
 local IDLE_BOB_PERIOD, IDLE_BOB_AMP = 90, 1.4
 function BattleState:idleBobDy(battler)
   if not battler or (self.introSlide or 0) > 0 then return 0 end
+  local anim = battler.picAnim
+  if anim and anim.anim and anim.anim.loop then return 0 end
   local phase = battler.isPlayer and 0 or (IDLE_BOB_PERIOD * 0.5)
   local u = (((self.frame or 0) + phase) % IDLE_BOB_PERIOD) / IDLE_BOB_PERIOD
   return math.sin(u * 2 * math.pi) * IDLE_BOB_AMP

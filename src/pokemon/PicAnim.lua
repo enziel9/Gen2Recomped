@@ -25,6 +25,19 @@
 -- back every second for the whole battle.  The animation therefore plays
 -- when the mon appears and when the summary page opens, exactly like the
 -- cartridge, and then the pic settles.
+--
+-- TWO THINGS A MOD MAY ASK FOR THAT THE CARTRIDGE NEVER DOES.
+--
+-- `anim.loop = true` runs the play/idle cycle again instead of settling, for
+-- art that was authored as a continuous animation (a Gen 5 battle sprite is
+-- one seamless loop, and settling it on a still halfway through is the one
+-- thing it must not do).  No ROM-imported record sets it, so every Crystal
+-- and Emerald species keeps the settle above, unchanged.
+--
+-- `def.picAnimBack` is the same record for the BACK pic.  Crystal has none --
+-- only its front pics carry animation tiles -- so it stays nil for every
+-- imported species and the player's own Pokemon holds still exactly as it
+-- did.  A mod that ships back-pic frames gets both sides animated.
 
 local PicAnim = {}
 PicAnim.__index = PicAnim
@@ -37,10 +50,14 @@ local function invalidate() frames = setmetatable({}, { __mode = "v" }) end
 require("src.render.Assets").register(invalidate)
 
 -- The record for `species`, or nil on Gold/Silver and for anything the
--- import could not decode.
-function PicAnim.record(data, species)
+-- import could not decode.  `side` is "back" for the player's own pic and
+-- anything else (nil included) for the front pic.
+function PicAnim.record(data, species, side)
   local def = data and data.pokemon and data.pokemon[species]
-  local anim = def and def.picAnim
+  local anim
+  if def then
+    if side == "back" then anim = def.picAnimBack else anim = def.picAnim end
+  end
   if type(anim) ~= "table" or not anim.sheet then return nil end
   if type(anim.play) ~= "table" and type(anim.idle) ~= "table" then
     return nil
@@ -103,8 +120,8 @@ end
 -- script before the mon was ever visible.  BattleState starts it on the
 -- first frame it actually draws the pic; the summary screen, which is up
 -- the moment it is constructed, starts it straight away.
-function PicAnim.new(data, species)
-  local anim = PicAnim.record(data, species)
+function PicAnim.new(data, species, side)
+  local anim = PicAnim.record(data, species, side)
   if not anim then return nil end
   local self = setmetatable({ anim = anim, paused = true }, PicAnim)
   self:restart("play")
@@ -113,8 +130,8 @@ end
 
 -- ...and the same, remembering the Pokemon whose colours the strip should be
 -- drawn in.  `species` alone cannot answer that: two ZIGZAGOON differ.
-function PicAnim.forMon(data, mon)
-  local self = PicAnim.new(data, mon and mon.species)
+function PicAnim.forMon(data, mon, side)
+  local self = PicAnim.new(data, mon and mon.species, side)
   if self then self.mon = mon end
   return self
 end
@@ -150,12 +167,17 @@ function PicAnim:update(dt)
       self.index = self.index + 1
       if not self.steps[self.index] then
         -- `play` hands over to `idle`; after `idle` the pic settles on the
-        -- still and stays there until something restarts it
-        if self.which ~= "play" then
+        -- still and stays there until something restarts it -- unless the
+        -- record asked to `loop`, where the whole cycle runs again and the
+        -- pic never settles (header, §two things a mod may ask for).
+        if self.which == "play" then
+          self:restart("idle")
+          if not self.steps and self.anim.loop then self:restart("play") end
+        elseif self.anim.loop then
+          self:restart("play")
+        else
           self.steps = nil
-          return
         end
-        self:restart("idle")
         if not self.steps then return end
       end
       self.left = self.steps[self.index].dur or 1
