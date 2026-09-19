@@ -6673,9 +6673,33 @@ end
 -- field has still weather and a save reloaded on the same map picks the
 -- sequence up where it was rather than snapping.
 -- ---------------------------------------------------------------------------
+-- Gen 2 route weather -- a map just declares a fixed name on its def
+-- (weather = "rain" etc, see Schemas.lua's R.maps), no ROM header byte or
+-- day-cycling table to resolve first. Reuses Gen3Weather's own LOOKS
+-- entries for the rendering: "RAIN"/"RAIN_THUNDERSTORM"/"SANDSTORM"/"SNOW"
+-- are generic concepts already implemented and verified there, not
+-- Hoenn-specific ones -- writing a second particle renderer for the same
+-- four looks would be the bug twice over, not caution.
+local GEN2_WEATHER_LOOKS = {
+  sunlight = "SUNNY", rain = "RAIN", thunderstorm = "RAIN_THUNDERSTORM",
+  sandstorm = "SANDSTORM", snow = "SNOW",
+}
+-- battle-side flag src/battle/Weather.start expects. snow has no
+-- in-battle hail effect here -- matches the real Gen 2 cartridge, not an
+-- oversight (see constants/weather_constants.asm on the pokecrystal-mod
+-- side, same rule).
+local GEN2_WEATHER_BATTLE = {
+  rain = "RAIN", thunderstorm = "RAIN", sandstorm = "SANDSTORM",
+  sunlight = "SUN",
+}
+
 function OverworldState:fieldWeather()
-  if not GameVersion.isGen3() then return nil end
-  return self:weatherName(Game.save.gen3WeatherActive)
+  if GameVersion.isGen3() then
+    return self:weatherName(Game.save.gen3WeatherActive)
+  end
+  local def = self.map and self.map.def
+  local w = def and def.weather
+  return w and GEN2_WEATHER_LOOKS[w] or nil
 end
 
 -- WHICH STEP OF A CYCLING ROUTE'S WEATHER TODAY IS.
@@ -6800,7 +6824,11 @@ end
 -- the mapping from the field's sixteen to the battle's four comes from the
 -- import rather than being restated here.
 function OverworldState:battleWeather()
-  if not GameVersion.isGen3() then return nil end
+  if not GameVersion.isGen3() then
+    local def = self.map and self.map.def
+    local w = def and def.weather
+    return w and GEN2_WEATHER_BATTLE[w] or nil
+  end
   local name = self:weatherName(Game.save.gen3WeatherActive)
   if not name then return nil end
   -- ...and a CYCLING route names a sequence rather than a weather, so ask it
