@@ -27,9 +27,15 @@
 -- Deliberately ABSENT, because this engine has no equivalent module and the
 -- honest answer is "not found":
 --
---   src.world.gen2.FieldMoves   field-move entry points live in
---                               src/script/* and the fieldmove.eligibility
---                               hook, not one module
+--   src.world.gen2.FieldMoves   field-move entry points are OverworldState
+--                               methods (tryCutOW, useSurfFieldMove, ...),
+--                               not one module -- no straight redirect
+--                               applies. A real file at
+--                               src/world/gen2/FieldMoves.lua wraps the
+--                               handful of entry points mods actually call,
+--                               so a mod's unconditional `require` still
+--                               succeeds; it is a shim, not an alias, so it
+--                               is not listed in ALIASES below
 --   src.world.gen2.Follower     PikachuFollower is Yellow's, not a general
 --                               party follower
 --   src.ui.gen2.Chrome          no shared window-chrome module

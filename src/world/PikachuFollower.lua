@@ -155,14 +155,17 @@ end
 -- from rh-hideout/pokeemerald-expansion's chibi OW sprite; the walkCycle
 -- check below is what turns a matching dedicated sheet into a real
 -- SPRITE_PIKACHU-style walker instead of a fixed pose).  For every other
--- species this looks for a dedicated overworld pic next to the species' own
--- art (assets/pokemon/<SPECIES>/overworld.png): if it isn't the 16x96
--- walk-cycle size it is loaded as a single fixed pose, a small correctly-
--- scaled stand-in meant to stand next to a 16x16 player/NPC.  Nothing else
--- has a dedicated pic yet, so the rest of the custom species still fall back
--- to the species' front battle pic, the ORIGINAL #571 placeholder, which is
--- a 48x48 canvas of detailed battle art and reads as comically oversized
--- next to the player.  Either way SpriteRenderer already draws a
+-- custom-mod species this looks for a dedicated overworld pic next to the
+-- species' own art (assets/pokemon/<SPECIES>/overworld.png); for a native
+-- ROM species (no per-species directory of its own) it looks instead for
+-- one named after the species under assets/generated/overworld/, reached
+-- through a mod's own overrides/ shadow (see below).  If what's found isn't
+-- the 16x96 walk-cycle size it is loaded as a single fixed pose, a small
+-- correctly-scaled stand-in meant to stand next to a 16x16 player/NPC.
+-- Species with no dedicated pic at all still fall back to the species'
+-- front battle pic, the ORIGINAL #571 placeholder, which is a 48x48 canvas
+-- of detailed battle art and reads as comically oversized next to the
+-- player.  Either way SpriteRenderer already draws a
 -- `frames <= 1` sheet as one fixed pose with no walk cycle (the same path an
 -- item ball or fossil takes), so no renderer change was needed for that
 -- fallback tier, and going through Sprites.path means a battle-pic fallback
@@ -190,6 +193,27 @@ local function followerSpriteId(game, species)
   if dedicated and Assets.exists(dedicated) then
     path = dedicated
     usedDedicated = true
+  else
+    -- A native ROM species has no per-species directory to look next to --
+    -- RomExtractorGen2 writes every one of the 251 into one shared
+    -- assets/generated/battle/front/ folder (<cleanname>.png), so `dir`
+    -- above is identical for all of them and the per-directory trick can
+    -- never tell two native species apart.  assets/generated/overworld/
+    -- is the importer's own existing flat category for other OW art (the
+    -- Gen3 walking sheet, the heal machine, field emotes), so a
+    -- mod-authored dedicated sheet for a native species goes there
+    -- instead, named after the species like every other generated
+    -- category -- and reaches this lookup through the exact same
+    -- assets/generated/ override shadow Assets.resolve already gives
+    -- every mod (mod.path .. "/overrides/overworld/<cleanname>.png"),
+    -- no species-specific plumbing needed (#extend-follower-natives).
+    local base = path:match("([^/]+%.png)$")
+    local named = base and ("assets/generated/overworld/" .. base)
+    local resolved = named and Assets.resolve(named)
+    if resolved and Assets.exists(resolved) then
+      path = named
+      usedDedicated = true
+    end
   end
   local image = Assets.image(path)
   local w, h = image:getDimensions()
