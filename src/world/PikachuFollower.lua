@@ -370,14 +370,16 @@ end
 -- is two or more off, Y deciding whenever the rows differ.  Returns the
 -- facing those 5-8 encode (Func_fc862 turns that way before it bounces),
 -- or nil for the near band, which only ever glances.
-local function strandedFacing(ow, npc)
-  local p = ow.player
-  local dy = p.cellY - npc.cellY
+-- leader is whatever this chaser trails -- the player for the party
+-- follower itself, or another chained NPC for a follow-the-leader link
+-- behind it (#test-mode-companions)
+local function strandedFacing(leader, npc)
+  local dy = leader.cellY - npc.cellY
   if dy ~= 0 then
     if dy > -2 and dy < 2 then return nil end
     return dy > 0 and "down" or "up"
   end
-  local dx = p.cellX - npc.cellX
+  local dx = leader.cellX - npc.cellX
   if dx > -2 and dx < 2 then return nil end
   return dx > 0 and "right" or "left"
 end
@@ -398,9 +400,9 @@ local function startIdleAnim(npc, facing)
   end
 end
 
-local function idleTick(ow, npc)
+local function idleTick(ow, npc, leader)
   -- Func_fc82e: a step in progress ends the idle state outright
-  if ow.player.moving then idleReset(npc) return end
+  if leader.moving then idleReset(npc) return end
   -- Every counter below burns one unit per UpdateSprites call, and a
   -- standing OverworldLoop spends two DelayFrames on each pass (home/
   -- overworld.asm: OverworldLoop delays, falls into OverworldLoopLessDelay
@@ -417,7 +419,7 @@ local function idleTick(ow, npc)
   if idle.kind == "wait" then
     idle.frames = idle.frames - 1
     if idle.frames > 0 then return end
-    local facing = strandedFacing(ow, npc)
+    local facing = strandedFacing(leader, npc)
     if facing then
       startIdleAnim(npc, facing)
     else
@@ -499,9 +501,160 @@ function PikachuFollower.rebase(ow, dx, dy)
   if trail then trail.x, trail.y = trail.x + dx, trail.y + dy end
 end
 
--- one follow step per frame: chase the cell the player last vacated
--- (pikachu_follow.asm keeps it one walk step behind)
+-- One follow step per frame: chase the cell `leader` last vacated
+-- (pikachu_follow.asm keeps it one walk step behind).  `leader` is whatever
+-- this chaser trails -- ow.player for the party follower below, or another
+-- chained NPC for a follow-the-leader link behind it (#test-mode-companions,
+-- the same mechanism generalized so it is reused rather than re-derived).
+-- `trail` is the caller-owned cursor ({x, y[, ledgeHop]}, seeded to leader's
+-- own cell) that remembers the leader's last-known cell between frames --
+-- ow.pikachuTrail for the party follower, one per link for a longer chain.
+function PikachuFollower.stepChase(game, ow, npc, trail, leader)
+  -- The follow command is queued the frame the leader COMMITS a step, not
+  -- the frame it lands: home/overworld.asm .noCollision sets wWalkCounter
+  -- and calls Func_fcc08 (pikachu_follow.asm Func_fcc42 reads the direction
+  -- of the step just started) before AdvancePlayerSprite, so Pikachu walks
+  -- into the cell the leader is vacating during that same step and rests
+  -- exactly one cell behind.  Waiting for leader.cellX to change put a whole
+  -- extra step between them -- the two-tile gap of issue #410.  targetX/Y
+  -- is the committed destination while a step is in flight and nil when
+  -- standing, so a warp or teleport still registers here (and the far > 6
+  -- snap below still catches it).
+  local destX = leader.targetX or leader.cellX
+  local destY = leader.targetY or leader.cellY
+  if destX ~= trail.x or destY ~= trail.y then
+    local stepDir = destY > trail.y and "down" or destY < trail.y and "up"
+                    or destX > trail.x and "right" or "left"
+    -- A ledge hop commits TWO steps (checkLedgeHop -> scriptMove(p, dir, 2),
+    -- the two simulated presses of HandleLedges) but only ONE follow
+    -- command: Func_fcc08 sees BIT_LEDGE_OR_FISHING and defers to
+    -- Func_fcc64, which appends the $5-$8 hop on the takeoff step and
+    -- appends nothing on the landing step (bit 6 of
+    -- wPikachuOverworldStateFlags toggles between the two).  With no command
+    -- behind it the hop cannot leave the buffer -- Func_fcc92 only pops once
+    -- a second command is queued -- so Pikachu walks up to the cell the
+    -- leader took off from, waits there two cells behind (the Func_fc842
+    -- idle rolls), and hops one leader step later (#424, after #409).
+    if trail.ledgeHop == stepDir then
+      trail.ledgeHop = nil
+      trail.x, trail.y = destX, destY
+    else
+      trail.ledgeHop = ledgeStep(game, ow, trail.x, trail.y, stepDir)
+                       and stepDir or nil
+      npc.goalX, npc.goalY = trail.x, trail.y
+      trail.x, trail.y = destX, destY
+    end
+  end
+  -- standing still with nothing to chase is the idle state (Func_fc803);
+  -- once a step is under way NPC:update owns px/py, so only the idle
+  -- record is dropped here -- never the interpolated pixels
+  if npc.moving then npc.idle = nil return end
+  if not npc.goalX then idleTick(ow, npc, leader) return end
+  local gx, gy = npc.goalX, npc.goalY
+  if npc.cellX == gx and npc.cellY == gy then
+    npc.goalX, npc.goalY = nil, nil
+    idleTick(ow, npc, leader)
+    return
+  end
+  -- fell more than a screen behind (forced movement, warp math): snap
+  local far = math.abs(npc.cellX - gx) + math.abs(npc.cellY - gy)
+  if far > 6 then
+    npc.cellX, npc.cellY = gx, gy
+    npc.px, npc.py = gx * 16, gy * 16
+    npc.goalX, npc.goalY = nil, nil
+    npc.idle = nil -- the snap already rewrote px/py
+    return
+  end
+  idleReset(npc) -- a real step overrides whatever the idle pose was
+  local dir
+  if npc.cellX < gx then dir = "right"
+  elseif npc.cellX > gx then dir = "left"
+  elseif npc.cellY < gy then dir = "down"
+  else dir = "up" end
+  npc.facing = dir
+  npc.targetX = npc.cellX + (dir == "right" and 1 or dir == "left" and -1 or 0)
+  npc.targetY = npc.cellY + (dir == "down" and 1 or dir == "up" and -1 or 0)
+  -- the cell ahead is the ledge the leader hopped: clear both cells in one
+  -- step instead of stopping on the ledge (#409).  The trail above holds
+  -- this back until the leader commits a further step, so it fires from the
+  -- cell on top of the ledge, a step late (#424).  pikachu_follow.asm
+  -- Func_fcc08 appends the $5-$8 hop commands while BIT_LEDGE_OR_FISHING
+  -- is set, and Func_fca0a runs them as two AddPikachuStepVector cells over
+  -- one normal step's frames -- no arc and no shadow, the hop command only
+  -- doubles the step vector (NPC:update's hopStep span).
+  if ledgeStep(game, ow, npc.cellX, npc.cellY, dir) then
+    local d = Collision.DELTA[dir]
+    npc.targetX, npc.targetY = npc.cellX + d[1] * 2, npc.cellY + d[2] * 2
+    npc.goalX, npc.goalY = npc.targetX, npc.targetY
+    npc.hopStep = true
+  end
+  -- walk at the leader's own step length (the bicycle is moot: shouldSpawn
+  -- hides the follower on a bike, ShouldPikachuSpawn's wWalkBikeSurfState
+  -- check), and halve it while more than one cell behind -- that is
+  -- FastPikachuFollow, which pikachu_follow.asm picks whenever two or more
+  -- steps are queued (AreThereAtLeastTwoStepsInPikachuFollowCommandBuffer:
+  -- walk counter $4 instead of NormalPikachuFollow's $8).
+  local stepLen = leader.stepFramesCur or leader.stepFrames or 16
+  -- the hop is never a Fast step: Func_fc7aa jumps to Func_fca0a on the $4
+  -- movement status BEFORE it asks AreThereAtLeastTwoSteps..., so its two
+  -- cells ride one normal step's frames even though the goal is two away.
+  if far > 1 and not npc.hopStep then
+    stepLen = math.max(1, math.floor(stepLen / 2))
+  end
+  npc.stepFrames = stepLen
+  npc.moving = true
+  npc.progress = 0
+  -- this frame's npc:update loop already ran (OverworldState:update walks
+  -- self.npcs, then calls here), so burn the step's first frame now.
+  -- Without it the step costs a frame more than the leader's and the
+  -- follower trails a pixel further every tile.
+  npc:update(ow.map, ow.entities)
+end
+
+-- ---------------------------------------------------------------------
+-- Chained trailing followers: N-deep follow-the-leader chains (Luna/Nico's
+-- test-mode companion walk, #test-mode-companions) built entirely out of
+-- stepChase above, the same mechanism the party follower itself uses to
+-- trail the player -- registered once, then driven from the tick below
+-- alongside the party follower's own, so a mod need not find (or re-derive)
+-- the real per-frame call site itself: this update() function already is
+-- it (OverworldController.lua's OverworldState:update calls
+-- PikachuFollower.update(Game, self) every frame, unlike a mod-registered
+-- map script's `onStep`, which does not reliably fire).  leaderFn is called
+-- fresh every tick rather than a fixed reference, so a chaser whose leader
+-- is itself re-skinned/respawned (the party follower's own species swap
+-- below) or another chaser still keeps chasing the live object.
+-- ---------------------------------------------------------------------
+
+function PikachuFollower.addChaser(ow, npc, leaderFn)
+  ow.pikachuChasers = ow.pikachuChasers or {}
+  PikachuFollower.removeChaser(ow, npc)
+  local leader = leaderFn()
+  local trail = { x = leader and leader.cellX or npc.cellX,
+                  y = leader and leader.cellY or npc.cellY }
+  table.insert(ow.pikachuChasers, { npc = npc, leaderFn = leaderFn, trail = trail })
+end
+
+function PikachuFollower.removeChaser(ow, npc)
+  local chasers = ow.pikachuChasers
+  if not chasers then return end
+  for i, c in ipairs(chasers) do
+    if c.npc == npc then table.remove(chasers, i) return end
+  end
+end
+
 function PikachuFollower.update(game, ow)
+  -- Chained companions trail whatever their own leader is (the party
+  -- follower, or the chaser ahead of them) regardless of the party
+  -- follower's own state below -- unconditional, so Luna/Nico keep walking
+  -- even the one frame the party follower itself is mid-hop/mid-scene.
+  local chasers = ow.pikachuChasers
+  if chasers then
+    for _, c in ipairs(chasers) do
+      local leader = c.leaderFn()
+      if leader then PikachuFollower.stepChase(game, ow, c.npc, c.trail, leader) end
+    end
+  end
   if ow.pikaHop then return end -- the counter hop owns the follower (#417)
   if ow.pikachuBillsScene then return end
   local npc = findFollower(ow)
@@ -531,105 +684,7 @@ function PikachuFollower.update(game, ow)
     trail = { x = p.cellX, y = p.cellY }
     ow.pikachuTrail = trail
   end
-  -- The follow command is queued the frame the player COMMITS a step, not
-  -- the frame it lands: home/overworld.asm .noCollision sets wWalkCounter
-  -- and calls Func_fcc08 (pikachu_follow.asm Func_fcc42 reads the direction
-  -- of the step just started) before AdvancePlayerSprite, so Pikachu walks
-  -- into the cell the player is vacating during that same step and rests
-  -- exactly one cell behind.  Waiting for p.cellX to change put a whole
-  -- extra step between them -- the two-tile gap of issue #410.  targetX/Y
-  -- is the committed destination while a step is in flight and nil when
-  -- standing, so a warp or teleport still registers here (and the far > 6
-  -- snap below still catches it).
-  local destX = p.targetX or p.cellX
-  local destY = p.targetY or p.cellY
-  if destX ~= trail.x or destY ~= trail.y then
-    local stepDir = destY > trail.y and "down" or destY < trail.y and "up"
-                    or destX > trail.x and "right" or "left"
-    -- A ledge hop commits TWO steps (checkLedgeHop -> scriptMove(p, dir, 2),
-    -- the two simulated presses of HandleLedges) but only ONE follow
-    -- command: Func_fcc08 sees BIT_LEDGE_OR_FISHING and defers to
-    -- Func_fcc64, which appends the $5-$8 hop on the takeoff step and
-    -- appends nothing on the landing step (bit 6 of
-    -- wPikachuOverworldStateFlags toggles between the two).  With no command
-    -- behind it the hop cannot leave the buffer -- Func_fcc92 only pops once
-    -- a second command is queued -- so Pikachu walks up to the cell the
-    -- player took off from, waits there two cells behind (the Func_fc842
-    -- idle rolls), and hops one player step later (#424, after #409).
-    if trail.ledgeHop == stepDir then
-      trail.ledgeHop = nil
-      trail.x, trail.y = destX, destY
-    else
-      trail.ledgeHop = ledgeStep(game, ow, trail.x, trail.y, stepDir)
-                       and stepDir or nil
-      npc.goalX, npc.goalY = trail.x, trail.y
-      trail.x, trail.y = destX, destY
-    end
-  end
-  -- standing still with nothing to chase is the idle state (Func_fc803);
-  -- once a step is under way NPC:update owns px/py, so only the idle
-  -- record is dropped here -- never the interpolated pixels
-  if npc.moving then npc.idle = nil return end
-  if not npc.goalX then idleTick(ow, npc) return end
-  local gx, gy = npc.goalX, npc.goalY
-  if npc.cellX == gx and npc.cellY == gy then
-    npc.goalX, npc.goalY = nil, nil
-    idleTick(ow, npc)
-    return
-  end
-  -- fell more than a screen behind (forced movement, warp math): snap
-  local far = math.abs(npc.cellX - gx) + math.abs(npc.cellY - gy)
-  if far > 6 then
-    npc.cellX, npc.cellY = gx, gy
-    npc.px, npc.py = gx * 16, gy * 16
-    npc.goalX, npc.goalY = nil, nil
-    npc.idle = nil -- the snap already rewrote px/py
-    return
-  end
-  idleReset(npc) -- a real step overrides whatever the idle pose was
-  local dir
-  if npc.cellX < gx then dir = "right"
-  elseif npc.cellX > gx then dir = "left"
-  elseif npc.cellY < gy then dir = "down"
-  else dir = "up" end
-  npc.facing = dir
-  npc.targetX = npc.cellX + (dir == "right" and 1 or dir == "left" and -1 or 0)
-  npc.targetY = npc.cellY + (dir == "down" and 1 or dir == "up" and -1 or 0)
-  -- the cell ahead is the ledge the player hopped: clear both cells in one
-  -- step instead of stopping on the ledge (#409).  The trail above holds
-  -- this back until the player commits a further step, so it fires from the
-  -- cell on top of the ledge, a step late (#424).  pikachu_follow.asm
-  -- Func_fcc08 appends the $5-$8 hop commands while BIT_LEDGE_OR_FISHING
-  -- is set, and Func_fca0a runs them as two AddPikachuStepVector cells over
-  -- one normal step's frames -- no arc and no shadow, the hop command only
-  -- doubles the step vector (NPC:update's hopStep span).
-  if ledgeStep(game, ow, npc.cellX, npc.cellY, dir) then
-    local d = Collision.DELTA[dir]
-    npc.targetX, npc.targetY = npc.cellX + d[1] * 2, npc.cellY + d[2] * 2
-    npc.goalX, npc.goalY = npc.targetX, npc.targetY
-    npc.hopStep = true
-  end
-  -- walk at the player's own step length (the bicycle is moot: shouldSpawn
-  -- hides the follower on a bike, ShouldPikachuSpawn's wWalkBikeSurfState
-  -- check), and halve it while more than one cell behind -- that is
-  -- FastPikachuFollow, which pikachu_follow.asm picks whenever two or more
-  -- steps are queued (AreThereAtLeastTwoStepsInPikachuFollowCommandBuffer:
-  -- walk counter $4 instead of NormalPikachuFollow's $8).
-  local stepLen = p.stepFramesCur or p.stepFrames or 16
-  -- the hop is never a Fast step: Func_fc7aa jumps to Func_fca0a on the $4
-  -- movement status BEFORE it asks AreThereAtLeastTwoSteps..., so its two
-  -- cells ride one normal step's frames even though the goal is two away.
-  if far > 1 and not npc.hopStep then
-    stepLen = math.max(1, math.floor(stepLen / 2))
-  end
-  npc.stepFrames = stepLen
-  npc.moving = true
-  npc.progress = 0
-  -- this frame's npc:update loop already ran (OverworldState:update walks
-  -- self.npcs, then calls here), so burn the step's first frame now.
-  -- Without it the step costs a frame more than the player's and Pikachu
-  -- trails a pixel further every tile.
-  npc:update(ow.map, ow.entities)
+  PikachuFollower.stepChase(game, ow, npc, trail, p)
 end
 
 -- ---------------------------------------------------------------------
