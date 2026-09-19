@@ -95,11 +95,11 @@ do
     "defaults to save.activeCharacter")
 
   -- Bag.order/remove/inventory all agree on the same per-character storage.
-  local order = Bag.order(save, "NICO", data)
+  local order = Bag.order(save, data, "NICO")
   T.eq(#order, 6, "nico's order list matches his 6 items")
-  Bag.remove(save, "FIX_A", 1, "NICO", data)
-  T.eq(Bag.inventory(save, "NICO", data).FIX_A, nil, "remove clears the slot")
-  T.eq(#Bag.order(save, "NICO", data), 5, "and drops it from the order list")
+  Bag.remove(save, "FIX_A", 1, data, "NICO")
+  T.eq(Bag.inventory(save, data, "NICO").FIX_A, nil, "remove clears the slot")
+  T.eq(#Bag.order(save, data, "NICO"), 5, "and drops it from the order list")
 
   run.release()
 end

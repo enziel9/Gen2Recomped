@@ -119,7 +119,7 @@ end
 
 -- Public read access to the same table Bag.add/remove mutate, for callers
 -- that only need to look (BagMenu's item-count column).
-function Bag.inventory(save, character, data)
+function Bag.inventory(save, data, character)
   return (resolveBag(save, character, data))
 end
 
@@ -159,7 +159,7 @@ function Bag.gen3Pockets(data)
   return (type(pockets) == "table" and next(pockets) ~= nil) and pockets or nil
 end
 
-function Bag.slots(save, character, data)
+function Bag.slots(save, data, character)
   local inv = resolveBag(save, character, data)
   local n = 0
   for id in pairs(inv) do
@@ -182,7 +182,7 @@ end
 
 -- Acquisition-ordered id list (wBagItems).  Rebuilt sorted once for
 -- saves from before the order existed, then maintained incrementally.
-function Bag.order(save, character, data)
+function Bag.order(save, data, character)
   local inv, container, key = resolveBag(save, character, data)
   local order = container[key]
   if not order then
@@ -243,7 +243,7 @@ function Bag.add(save, id, qty, data, character)
         return false
       end
     else
-      if Bag.slots(save, character, data) >= Bag.capacity(data) then
+      if Bag.slots(save, data, character) >= Bag.capacity(data) then
         return false
       end
     end
@@ -254,13 +254,13 @@ function Bag.add(save, id, qty, data, character)
   local isNew = not inv[id]
   inv[id] = (inv[id] or 0) + (qty or 1)
   if isNew and not isBadge(id) then
-    table.insert(Bag.order(save, character, data), id)
+    table.insert(Bag.order(save, data, character), id)
   end
   return true
 end
 
 -- Remove qty (default 1); clears the slot and its order entry at zero.
-function Bag.remove(save, id, qty, character, data)
+function Bag.remove(save, id, qty, data, character)
   local inv, container, key = resolveBag(save, character, data)
   inv[id] = (inv[id] or 0) - (qty or 1)
   if inv[id] <= 0 then
@@ -280,7 +280,7 @@ end
 function Bag.giveHeld(save, mon, id, data)
   local previous = mon.item
   mon.item = id
-  Bag.remove(save, id, 1)
+  Bag.remove(save, id, 1, data)
   if previous then Bag.add(save, previous, 1, data) end
   return previous
 end
