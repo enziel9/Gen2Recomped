@@ -8,6 +8,18 @@
 -- Gen 2 has four pockets (GetPocketCapacity 03:$528E): ITEM 20, BALL 20,
 -- KEY_ITEM 20, TM_HM unlimited.  The single-pocket Gen 1 limit still applies
 -- when not in Gen 2 mode.
+--
+-- PER-CHARACTER SPLIT (data.constants.characterBags, a mod-declared
+-- roster, docs/superpowers/specs/2026-09-19-per-character-backpack-design.md
+-- in the pokemon-wish repo): when present, every pocket cap above is
+-- divided by the roster size (floored; TM/HM's split base is the same shared 20 as
+-- every other pocket, not its own unlimited cap -- an explicit design choice) and every id
+-- other than "PROTAGONIST" gets its own storage under
+-- save.characterBags[id].  PROTAGONIST keeps using save.inventory/
+-- save.bagOrder directly -- the exact same fields every pre-existing save
+-- and call site already uses, not a copy, so nothing needs migrating.
+-- Absent constant = today's behavior exactly; every `character` argument
+-- below is accepted but has no effect.
 
 local Bag = {}
 
@@ -33,6 +45,74 @@ local function pocketOf(id, data)
   return "ITEM"
 end
 
+local function isBadge(id)
+  return id:find("BADGE", 1, true) ~= nil
+end
+
+-- exported so item lists that share save.inventory (e.g. the PC deposit
+-- menu) can exclude badges the same way the bag does
+Bag.isBadge = isBadge
+
+-- The roster a mod declared, or nil when none did (today's single-bag
+-- behavior). Its own lookup so every function below reads it the same way.
+local function roster(data)
+  data = data or require("src.core.Data")
+  local list = data.constants and data.constants.characterBags
+  return (type(list) == "table" and list[1]) and list or nil
+end
+
+-- One entry of data.constants.characterBags by id, or nil (no roster, or
+-- an id the roster does not list). Used by BagMenu (title/palette) and
+-- PartyMenu (the owner marker) as well as by Bag.lua itself.
+function Bag.characterInfo(id, data)
+  local list = roster(data)
+  if not (list and id) then return nil end
+  for _, entry in ipairs(list) do
+    if entry.id == id then return entry end
+  end
+  return nil
+end
+
+-- save.presentCharacters if a story script narrowed it, else every id in
+-- the roster in declared order (nil when there is no roster at all).
+-- Never writes the save -- "everyone" is read live off the roster, not a
+-- copy pinned at some past moment.
+function Bag.presentCharacters(save, data)
+  if save.presentCharacters then return save.presentCharacters end
+  local list = roster(data)
+  if not list then return nil end
+  local ids = {}
+  for _, entry in ipairs(list) do ids[#ids + 1] = entry.id end
+  return ids
+end
+
+-- The inventory table and the {container, key} pair its acquisition order
+-- lives at, for `character` (falling back to save.activeCharacter, then
+-- PROTAGONIST). No roster, no character, or character == "PROTAGONIST" all
+-- resolve to save.inventory/save.bagOrder -- the exact fields every save
+-- already has, never a separate copy.
+local function resolveBag(save, character, data)
+  local list = roster(data)
+  character = character or (list and save.activeCharacter) or nil
+  if not list or not character or character == "PROTAGONIST" then
+    save.inventory = save.inventory or {}
+    return save.inventory, save, "bagOrder"
+  end
+  save.characterBags = save.characterBags or {}
+  local bag = save.characterBags[character]
+  if not bag then
+    bag = { inventory = {} }
+    save.characterBags[character] = bag
+  end
+  return bag.inventory, bag, "bagOrder"
+end
+
+-- Public read access to the same table Bag.add/remove mutate, for callers
+-- that only need to look (BagMenu's item-count column).
+function Bag.inventory(save, character, data)
+  return (resolveBag(save, character, data))
+end
+
 -- `data` is injectable for the save editor and headless mod tests.  Normal
 -- gameplay may omit it because the loader merges mods into the Data
 -- singleton before any item can be added.  The fallback keeps old/stale
@@ -40,10 +120,24 @@ end
 function Bag.capacity(data)
   data = data or require("src.core.Data")
   local configured = data and data.constants and data.constants.bagSize
-  if type(configured) == "number" and configured >= 1 then
-    return math.floor(configured)
-  end
-  return DEFAULT_CAPACITY
+  local base = (type(configured) == "number" and configured >= 1)
+    and math.floor(configured) or DEFAULT_CAPACITY
+  local list = roster(data)
+  if list then base = math.floor(base / #list) end
+  return base
+end
+
+-- Gen2 pocket cap for one pocket, split per character when a roster is
+-- declared -- TM/HM included, its split base is the same shared 20 as
+-- every other pocket, not its own unlimited cap (explicit design choice,
+-- not an oversight).
+function Bag.pocketCapacity(pocket, data)
+  data = data or require("src.core.Data")
+  local base = GEN2_POCKET_CAP[pocket] or 20
+  local list = roster(data)
+  if not list then return base end
+  if base == math.huge then base = DEFAULT_CAPACITY end
+  return math.floor(base / #list)
 end
 
 -- The five pocket sizes a Gen 3 dataset carries, or nil for one that does
@@ -55,26 +149,20 @@ function Bag.gen3Pockets(data)
   return (type(pockets) == "table" and next(pockets) ~= nil) and pockets or nil
 end
 
-local function isBadge(id)
-  return id:find("BADGE", 1, true) ~= nil
-end
-
--- exported so item lists that share save.inventory (e.g. the PC deposit
--- menu) can exclude badges the same way the bag does
-Bag.isBadge = isBadge
-
-function Bag.slots(save)
+function Bag.slots(save, character)
+  local inv = resolveBag(save, character)
   local n = 0
-  for id in pairs(save.inventory) do
+  for id in pairs(inv) do
     if not isBadge(id) then n = n + 1 end
   end
   return n
 end
 
 -- Count slots used by a specific Gen2 pocket.
-function Bag.pocketSlots(save, pocket, data)
+function Bag.pocketSlots(save, pocket, data, character)
+  local inv = resolveBag(save, character, data)
   local n = 0
-  for id in pairs(save.inventory) do
+  for id in pairs(inv) do
     if not isBadge(id) and pocketOf(id, data) == pocket then
       n = n + 1
     end
@@ -84,28 +172,29 @@ end
 
 -- Acquisition-ordered id list (wBagItems).  Rebuilt sorted once for
 -- saves from before the order existed, then maintained incrementally.
-function Bag.order(save)
-  local order = save.bagOrder
+function Bag.order(save, character)
+  local inv, container, key = resolveBag(save, character)
+  local order = container[key]
   if not order then
     order = {}
-    for id in pairs(save.inventory) do
+    for id in pairs(inv) do
       if not isBadge(id) then table.insert(order, id) end
     end
     table.sort(order)
-    save.bagOrder = order
+    container[key] = order
   end
   -- drop stale ids, append unknown ones (defensive against direct
   -- inventory writes)
   local seen = {}
   for i = #order, 1, -1 do
     local id = order[i]
-    if not save.inventory[id] or seen[id] then
+    if not inv[id] or seen[id] then
       table.remove(order, i)
     else
       seen[id] = true
     end
   end
-  for id in pairs(save.inventory) do
+  for id in pairs(inv) do
     if not isBadge(id) and not seen[id] then table.insert(order, id) end
   end
   return order
@@ -114,13 +203,13 @@ end
 -- Add qty of an item; returns false (and adds nothing) when a new slot
 -- is needed and the pocket (Gen2) or bag (Gen1) is full, or when the
 -- stack would pass 99 (AddItemToInventory's per-slot quantity cap).
-function Bag.add(save, id, qty, data)
+function Bag.add(save, id, qty, data, character)
   -- resolve the dataset ONCE: pocketOf and the pocket sizes have to agree
   -- about which dataset they are reading, and pocketOf's own fallback is
   -- "everything is an ITEM", which would count a Poke Ball against the item
   -- pocket's thirty
   data = data or require("src.core.Data")
-  local inv = save.inventory
+  local inv = resolveBag(save, character, data)
   if not inv[id] and not isBadge(id) then
     -- EMERALD'S BAG IS FIVE POCKETS, and the sizes are the cartridge's:
     -- they fall out of the save layout, where each pocket starts where the
@@ -132,18 +221,19 @@ function Bag.add(save, id, qty, data)
     if gen3 then
       local pocket = pocketOf(id, data)
       local cap = gen3[pocket]
-      if cap and Bag.pocketSlots(save, pocket, data) >= cap then
+      if cap and Bag.pocketSlots(save, pocket, data, character) >= cap then
         return false
       end
     elseif require("src.core.GameVersion").isGen2() then
-      -- Gen2: each pocket has its own limit; TM/HM pocket is unlimited
+      -- Gen2: each pocket has its own limit, split per character when a
+      -- roster is declared (Bag.pocketCapacity)
       local pocket = pocketOf(id, data)
-      local cap = GEN2_POCKET_CAP[pocket] or 20
-      if Bag.pocketSlots(save, pocket, data) >= cap then
+      if Bag.pocketSlots(save, pocket, data, character)
+          >= Bag.pocketCapacity(pocket, data) then
         return false
       end
     else
-      if Bag.slots(save) >= Bag.capacity(data) then
+      if Bag.slots(save, character) >= Bag.capacity(data) then
         return false
       end
     end
@@ -154,18 +244,18 @@ function Bag.add(save, id, qty, data)
   local isNew = not inv[id]
   inv[id] = (inv[id] or 0) + (qty or 1)
   if isNew and not isBadge(id) then
-    table.insert(Bag.order(save), id)
+    table.insert(Bag.order(save, character), id)
   end
   return true
 end
 
 -- Remove qty (default 1); clears the slot and its order entry at zero.
-function Bag.remove(save, id, qty)
-  local inv = save.inventory
+function Bag.remove(save, id, qty, character)
+  local inv, container, key = resolveBag(save, character)
   inv[id] = (inv[id] or 0) - (qty or 1)
   if inv[id] <= 0 then
     inv[id] = nil
-    local order = save.bagOrder
+    local order = container[key]
     if order then
       for i, oid in ipairs(order) do
         if oid == id then table.remove(order, i) break end

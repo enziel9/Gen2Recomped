@@ -1189,6 +1189,14 @@ R.constants = {
                            icon = f.opt(f.path), item = f.opt(f.id("items")) }),
     hmMoves = f.list(f.id("moves")),
     encounterBuckets = f.list(f.int(1, 256)),
+    -- per-character backpack roster (docs/superpowers/specs/2026-09-19-
+    -- per-character-backpack-design.md in pokemon-wish). Absent = the
+    -- single shared bag every other cartridge/mod already gets; declaring
+    -- it splits every Gen2 pocket cap by #characterBags and gives every
+    -- id but "PROTAGONIST" its own save.characterBags[id] storage.
+    characterBags = f.list(f.rec{
+      id = f.str, name = f.opt(f.str), color = f.opt(f.any),
+    }),
   },
   example = 'mod.content.constants:patch("levelCap", 80)',
 }
