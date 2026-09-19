@@ -797,8 +797,9 @@ local HEART_SCALE = "ITEM_093"
 
 function Commands.g2_move_relearner(ctx)
   local save, data = ctx.save, ctx.game.data
+  local Bag = require("src.inventory.Bag")
   local scale = (data.items or {})[HEART_SCALE] and HEART_SCALE
-  if not (scale and (save.inventory or {})[scale]) then
+  if not (scale and (Bag.inventory(save, data)[scale] or 0) > 0) then
     return say(ctx, nil, Strings("Bring me a HEART\nSCALE and I'll\nteach a move."))
   end
   if not confirm(ctx, nil, Strings(
@@ -834,7 +835,7 @@ function Commands.g2_move_relearner(ctx)
   local id = menuPick(ctx, menu, { tx = 8, ty = 0, tw = 12, maxVisible = 4 })
   if not id then return say(ctx, nil, Strings("Come again!")) end
   if teachMove(ctx, picked, id) then
-    require("src.inventory.Bag").remove(save, scale, 1)
+    Bag.remove(save, scale, 1, data)
     say(ctx, nil, Strings("Thanks! I'll take\nthat HEART SCALE."))
   end
 end

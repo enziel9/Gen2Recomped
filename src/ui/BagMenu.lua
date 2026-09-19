@@ -565,7 +565,7 @@ BagMenu.useItem = useItem
 -- already holding something is offered the swap (TryGiveItemToMon).
 -- TryGiveItemToMon: hand `id` to `mon`, offering the swap when it is already
 -- holding something.  Key items and mail stay in the pack.
-local function handOver(game, mon, id, onChanged)
+local function handOver(game, mon, id, onChanged, character)
   local def = game.data.items[id]
   local name = (def and def.name) or id
   local monName = mon.nickname
@@ -580,7 +580,7 @@ local function handOver(game, mon, id, onChanged)
   end
   local held = mon.item
   local function hand()
-    require("src.inventory.Bag").giveHeld(game.save, mon, id, game.data)
+    require("src.inventory.Bag").giveHeld(game.save, mon, id, game.data, character)
     if onChanged then onChanged() end
   end
   if not held then
@@ -609,10 +609,10 @@ end
 BagMenu.handOver = handOver
 
 -- GSC's GiveItem (pack.asm): pick a party mon, then hand it the item.
-local function giveItem(game, id, onChanged)
+local function giveItem(game, id, onChanged, character)
   require("src.ui.Screens").push(game, "PartyMenu", {
     pickOnly = true,
-    onSwitch = function(mon) handOver(game, mon, id, onChanged) end,
+    onSwitch = function(mon) handOver(game, mon, id, onChanged, character) end,
   })
 end
 
@@ -751,7 +751,7 @@ function BagMenu.new(game, opts)
       if opts.giveTo then
         -- opened from MonMenu's ITEM -> GIVE: the pick hands straight over
         list:close()
-        handOver(game, opts.giveTo, id, nil)
+        handOver(game, opts.giveTo, id, nil, character)
         return
       end
       if battle then -- no tossing mid-battle
@@ -790,7 +790,7 @@ function BagMenu.new(game, opts)
       if gen2 and tossable then
         options[#options + 1] = { label = Strings("GIVE"),
           onSelect = function()
-            giveItem(game, id, function() refresh(list) end)
+            giveItem(game, id, function() refresh(list) end, character)
           end }
       end
       if tossable then

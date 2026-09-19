@@ -277,20 +277,20 @@ end
 -- GSC held items (engine/items/pack.asm GiveItem / TryGiveItemToMon).  Give
 -- returns whatever the mon was already holding -- the ROM offers to swap and
 -- the old item goes straight back into the pack.
-function Bag.giveHeld(save, mon, id, data)
+function Bag.giveHeld(save, mon, id, data, character)
   local previous = mon.item
   mon.item = id
-  Bag.remove(save, id, 1, data)
-  if previous then Bag.add(save, previous, 1, data) end
+  Bag.remove(save, id, 1, data, character)
+  if previous then Bag.add(save, previous, 1, data, character) end
   return previous
 end
 
 -- TakeItem: nil when the mon holds nothing, or nil + "full" when the pack has
 -- no room for it (the mon keeps holding it).
-function Bag.takeHeld(save, mon, data)
+function Bag.takeHeld(save, mon, data, character)
   local id = mon.item
   if not id then return nil end
-  if not Bag.add(save, id, 1, data) then return nil, "full" end
+  if not Bag.add(save, id, 1, data, character) then return nil, "full" end
   mon.item = nil
   return id
 end
