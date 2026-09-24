@@ -10464,11 +10464,35 @@ function BattleState:drawTextAreaInner()
     else
       -- BATTLE_MENU_TEMPLATE: box (8,12)-(19,17), "FIGHT <PK><MN> /
       -- ITEM  RUN" from (10,14); cursor columns 9 / 15
-      Font.drawBox(8, 12, 12, 6)
+      local MenuSkin = require("src.ui.MenuSkin")
+      local skin = MenuSkin.active()
+      if skin then
+        MenuSkin.drawBox(8, 12, 12, 6)
+        love.graphics.setColor(0, 0, 0, 1)
+      else
+        Font.drawBox(8, 12, 12, 6)
+      end
+      if skin == "gen5" then
+        -- the coloured buttons carry the cursor in this skin, so no arrow
+        local cells = {
+          { "FIGHT", 80, 112, MenuSkin.textWidth(Strings("FIGHT")) },
+          { "PKMN", 128, 112, 16 },
+          { "ITEM", 80, 128, MenuSkin.textWidth(Strings("ITEM")) },
+          { "RUN", 128, 128, MenuSkin.textWidth(Strings("RUN")) },
+        }
+        for i, c in ipairs(cells) do
+          MenuSkin.button(c[1], c[2], c[3], c[4], i == self.menuIndex)
+        end
+      elseif skin then
+        MenuSkin.highlightRow(col == 0 and 70 or 118, 112 + row * 16,
+                              col == 0 and 52 or 39)
+      end
       Font.draw(Strings("FIGHT"), 80, 112)
       Font.drawCode(0xE1, 128, 112); Font.drawCode(0xE2, 136, 112)
       Font.draw(Strings("ITEM"), 80, 128); Font.draw(Strings("RUN"), 128, 128)
-      Font.drawCode(0xED, (col == 0 and 72 or 120), 112 + row * 16)
+      if skin ~= "gen5" then
+        Font.drawCode(0xED, (col == 0 and 72 or 120), 112 + row * 16)
+      end
     end
   elseif self.phase == "moveSelect" then
     -- pokered MoveSelectionMenu: move list in a box at (4,12) 16x6,

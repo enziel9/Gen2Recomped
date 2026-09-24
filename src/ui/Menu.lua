@@ -85,6 +85,8 @@ function Menu.new(game, items, opts)
   -- puts it, and it only appears for a menu that has descriptions at all --
   -- so every Game Boy menu in this engine is untouched.
   self.describeBox = opts.describeBox
+  -- opts.skin: draw with MenuSkin when one is chosen (the START menu asks)
+  self.skin = opts.skin or false
   for _, it in ipairs(items) do
     if it.describe then self.describes = true break end
   end
@@ -156,7 +158,13 @@ function Menu:draw()
     r:setUIAnchor(self.tx * 8, self.ty * 8,
                   self.tw * 8, self.th * 8, self.anchor)
   end
-  Font.drawBox(self.tx, self.ty, self.tw, self.th)
+  local MenuSkin = self.skin and require("src.ui.MenuSkin")
+  local skinned = MenuSkin and MenuSkin.active()
+  if skinned then
+    MenuSkin.drawBox(self.tx, self.ty, self.tw, self.th)
+  else
+    Font.drawBox(self.tx, self.ty, self.tw, self.th)
+  end
   love.graphics.setColor(0, 0, 0, 1)
   local visible = (self.maxVisible and math.min(self.maxVisible, #self.items))
     or #self.items
@@ -184,6 +192,11 @@ function Menu:draw()
   local lastY = (self.ty + self.th - 2) * 8
   local lift = math.max(0, (lastY + Font.glyphHeight())
                            - (self.ty + self.th - 1) * 8)
+  if skinned then
+    MenuSkin.highlightRow(self.tx * 8 + 3,
+      (self.ty + self.th - 2 - (visible - (self.index - self.scroll))
+        * self.rowStep) * 8 - lift, self.tw * 8 - 6)
+  end
   for row = 1, visible do
     local item = self.items[self.scroll + row]
     if not item then break end

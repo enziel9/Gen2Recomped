@@ -194,7 +194,7 @@ function StartMenu.new(game)
     -- right of the 20x18 grid, so the anchor keeps it flush when the view
     -- is zoomed out and the letterbox no longer fills the window
     { tx = 9, ty = 0, tw = 11, maxVisible = maxVisible, startCloses = true,
-      anchor = "topright" })
+      anchor = "topright", skin = true })
   -- the cursor position survives closing the menu
   -- (wBattleAndStartSavedMenuItem, home/start_menu.asm)
   menu.index = math.min(game.save.startMenuIndex or 1, #items)
