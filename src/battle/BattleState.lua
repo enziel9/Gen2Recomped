@@ -6216,7 +6216,11 @@ function BattleState:executeAction(user, target, action)
 
     -- trainer class AI actions (engine/battle/trainer_ai.asm)
     if action.special == "aiItem" then
-      self.aiUses = (self.aiUses or 1) - 1
+      -- keepUses: a mod-issued item action (pokemon_wish's Redini
+      -- activation) that must not spend the trainer class's wAICount
+      if not action.keepUses then
+        self.aiUses = (self.aiUses or 1) - 1
+      end
       -- a Gen 3 trainer spends a SLOT, not a per-Pokemon allowance: the
       -- cartridge nulls the entry in trainerItems as it emits the action, so
       -- three FULL RESTOREs are three heals in the whole battle
@@ -6224,7 +6228,19 @@ function BattleState:executeAction(user, target, action)
         self.gen3ItemsUsed = self.gen3ItemsUsed or {}
         self.gen3ItemsUsed[action.slot] = true
       end
-      for _, m in ipairs(TrainerAI.useItem(self, action.item)) do
+      -- hooked as battle.ai_item so a mod can give an item of its own an
+      -- AI-side effect; the chain gets the whole action (item, and any
+      -- fields the issuing enemy_action hook put on it) and returns the
+      -- messages, exactly what useItem returns
+      local said
+      if Runtime.wantsHook("battle.ai_item") then
+        said = Runtime.call("battle.ai_item", function(battle, a)
+          return TrainerAI.useItem(battle, a.item)
+        end, self, action)
+      else
+        said = TrainerAI.useItem(self, action.item)
+      end
+      for _, m in ipairs(said or {}) do
         self:sayNext(prefixEnemy(m, self.enemy))
       end
       self:drainNext()
