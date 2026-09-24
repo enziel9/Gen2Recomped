@@ -10465,7 +10465,9 @@ function BattleState:drawTextAreaInner()
       -- BATTLE_MENU_TEMPLATE: box (8,12)-(19,17), "FIGHT <PK><MN> /
       -- ITEM  RUN" from (10,14); cursor columns 9 / 15
       local MenuSkin = require("src.ui.MenuSkin")
-      local skin = MenuSkin.active()
+      -- DRAMATIC_SHAPE whitens near-black ink over a dark backdrop, which
+      -- would put white letters on the skin's light paper
+      local skin = not self.dramaticShapeDark and MenuSkin.active()
       if skin then
         MenuSkin.drawBox(8, 12, 12, 6)
         love.graphics.setColor(0, 0, 0, 1)
