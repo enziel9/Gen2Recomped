@@ -9714,6 +9714,57 @@ function BattleState.frontPlacement(ex, ey, w, h, scale)
   return ex + w * (1 - scale) / 2, ey + h * (1 - scale), scale
 end
 
+-- ---------------------------------------------------------------------------
+-- THE RIGHT-HAND PAIR ON A GAME BOY SCREEN
+--
+-- Red and Crystal never fought a double, so the 160x144 screen has no place
+-- for a second Pokemon on either side: the foe's 7x7 slot, its HUD, the
+-- player's back pic and its HUD already tile the whole field above the text
+-- box.  A double forced onto one of those cartridges by a mod (Commands'
+-- start_battle with { double = true }) ran four battlers and drew two -- the
+-- turn loop was right and the screen showed a Pokemon being hit by
+-- attackers that were not there.
+--
+-- So the right-hand flank stands BESIDE its partner at half size, the way
+-- Emerald stands its second pair a step further back: the foe's partner to
+-- the left of the foe (toward the middle of the screen, where the only open
+-- columns under its HUD are), the player's to the right of the player's.
+-- Half, not some nicer-looking fraction, because these pics are pixel art
+-- drawn nearest-neighbour: 0.5 drops every other pixel and keeps the
+-- outline's rhythm, where 0.6 drops them unevenly and the sprite shimmers.
+--
+-- The flank is placed from where its OWN pic would stand as the left flank
+-- -- frontPlacement / backPlacement at full scale, so its feet land on the
+-- same row and its species' padding is honoured -- then shrunk about its
+-- feet and slid over.  `pad` is the pic's empty rows under the feet (0 for a
+-- front pic, which frontPlacement pins by its buffer's bottom edge).
+--
+-- A pure helper and a module field, like its two siblings above, so a mod
+-- that re-hangs the pics somewhere else (DRAMATIC_SHAPE's billboard
+-- textures) can re-place the partner the same way it re-places the lead.
+-- Only reached from the classic doubles pass in drawPicsLayer; a single
+-- battle never calls it.
+-- ---------------------------------------------------------------------------
+BattleState.FLANK_SCALE = 0.5
+BattleState.FLANK_OFFSET = { enemy = { -32, 0 }, player = { 32, 0 } }
+
+function BattleState.flankPlacement(isPlayer, x, y, w, h, pad, scale)
+  local footX, footY = x + w * scale / 2, y + (h - pad) * scale
+  local o = BattleState.FLANK_OFFSET[isPlayer and "player" or "enemy"]
+  local s = scale * BattleState.FLANK_SCALE
+  return footX + o[1] - w * s / 2, footY + o[2] - (h - pad) * s, s
+end
+
+-- Where the classic layout's right-hand flanks are drawn at all: a genuine
+-- double on the Game Boy screen.  Emerald's screen has its own four-slot
+-- composition (Gen3Battle), and the widescreen option composites each side
+-- into a region of its own with its own HUDs (WideBattle); neither is this.
+-- isDouble first, so a single battle answers on the first test.
+function BattleState:classicDouble()
+  return self:isDouble() and not self:gen3Layout()
+         and not self:isWideBattleLayout()
+end
+
 -- Front/trainer pics: LoadUncompressedSpriteData centers the sprite in
 -- a 7x7 tile buffer, then CopyUncompressedPicToTilemap places that
 -- buffer at hlcoord 12,0.  Horizontal pad is floor((8-w)/2) tiles;
@@ -9750,6 +9801,64 @@ function BattleState:drawPicsLayer(slide, sx, sy, onlySide, skipMenuClip)
     cs1, cs2, cs3, cs4 = g.getScissor()
     g.intersectScissor(0, 0, 160, clipY)
     clipped = true
+  end
+  -- THE RIGHT-HAND PAIR, on a Game Boy screen that was never drawn for one
+  -- (see BattleState.flankPlacement).  First, so each lead is drawn over its
+  -- partner where the two touch: the partner is the one standing further
+  -- back.  Inside the move-menu clip above, like the leads.
+  --
+  -- The guards are the leads' own, asked about THIS battler rather than
+  -- copied off `self.enemy` / `self.player`: its own blink, its own ball, its
+  -- own grow-in -- and its side's arrival, which is one test for the pair
+  -- because both of a side's Pokemon come out on the same command (see
+  -- sideArriving).  A Gen 3 double never enters: its own loop at the bottom
+  -- of this function places the pair on Emerald's platforms instead.
+  if self:classicDouble() then
+    for _, pos in ipairs({ BattleState.POS.OPPONENT_RIGHT,
+                           BattleState.POS.PLAYER_RIGHT }) do
+      local b = self:battlerAt(pos)
+      local mine = b and b.isPlayer
+      if b and b.sprite
+         and onlySide ~= (mine and "enemy" or "player")
+         and not (mine and (self.safari or self:demoHidesPlayer()))
+         and not self:sideArriving(mine, slide)
+         and not self:fxHidden(b)
+         and not ((self:gen3BallFor(b) or {}).monHidden) then
+        local img = self:picImage(b.sprite)
+        if img then
+          love.graphics.setColor(1, 1, 1, 1)
+          local w, h = img:getWidth(), img:getHeight()
+          -- the same path each lead's branch resolves its scale by
+          local s = BattleState.resolveBattleScale(self.data,
+            mine and "back" or "front",
+            imagePathOf(mine and b.sprite or img),
+            b.mon and b.mon.species)
+          local x, y, pad
+          if mine then
+            pad = imagePadBottom[b.sprite] or 0
+            x, y = BattleState.backPlacement(w, h, pad,
+                                             imagePadLeft[b.sprite] or 0, s)
+          else
+            pad = 0
+            local ex, ey = enemyPicXY(img, slide, 0, 0)
+            x, y = BattleState.frontPlacement(ex, ey, w, h, s)
+          end
+          x, y, s = BattleState.flankPlacement(mine, x, y, w, h, pad, s)
+          -- a replacement sent into this slot grows out of its ball like a
+          -- lead does, about the same feet
+          local gs = self:growInScale(b)
+          if gs then
+            local eff = s * gs
+            if eff > 0 then
+              self:drawBattlerPic(b, x + w * (s - eff) / 2 + sx,
+                                  y + (h - pad) * (s - eff) + sy, eff)
+            end
+          else
+            self:drawBattlerPic(b, x + sx, y + sy, s)
+          end
+        end
+      end
+    end
   end
   -- Enemy: front sprite in the 7x7 slot at hlcoord 12,0.
   if onlySide ~= "player" and self.showEnemyTrainer and self.trainerPic then
@@ -10028,6 +10137,62 @@ function BattleState:drawPicsLayer(slide, sx, sy, onlySide, skipMenuClip)
   end
 end
 
+-- ---------------------------------------------------------------------------
+-- AND A HUD FOR EACH OF THE RIGHT-HAND PAIR
+--
+-- The two HUD blocks fill their corners of the Game Boy screen, and what is
+-- left is not a corner: the foe's partner gets the two tile rows under the
+-- foe's block (rows 4-5, clear of the foe's 7x7 slot, which starts at x=96),
+-- and the player's partner the three rows left of the player's block (rows
+-- 6-8, up to column 9, where the player's block begins).  Name, HP bar, and
+-- the HP figures on the player's side -- no chrome, no level: there is no
+-- room for the tick and underline tiles and they are not what tells the
+-- player how the fight is going.  Five bar segments instead of six, so the
+-- foe's partner's box ends at x=80, about where the pic that now stands
+-- beside its lead begins (FLANK_OFFSET puts a 56-wide one at x=78).
+--
+-- The player's partner shares its rows with the top of the player's own back
+-- pic, and on the colorized pipeline the pics are drawn after the HUD layer
+-- -- so where the lead's head is, it is in front of the partner's name.
+-- There is no free rectangle on this screen that avoids it; the 3D staging
+-- (DRAMATIC_SHAPE), which is what draws these battles when a map has an
+-- arena, has no flat pic there at all.
+--
+-- Returned rather than only drawn, so a mod that lays glass under the HUD
+-- (DRAMATIC_SHAPE's frosted panels) reads the same boxes this draws and
+-- cannot drift from them.  Each entry is { side, battler, rect = {x, y, w, h} }
+-- in screen pixels; nil outside a classic double, so a single battle never
+-- gets past the first line.
+-- ---------------------------------------------------------------------------
+BattleState.FLANK_HUD_RECT = {
+  enemy = { 8, 32, 72, 16 },
+  player = { 8, 48, 64, 24 },
+}
+
+function BattleState:flankHuds(slide)
+  if not self:classicDouble() then return nil end
+  local out = {}
+  -- the lead's own HUD waits for the same things (drawHUDs below): the
+  -- trainer pic, the send-out, the grow-in, the slide and the intro balls,
+  -- all of which sideArriving asks about the side; a fainted partner has
+  -- already been lifted out of its slot (doubleFaint)
+  local foe = self:battlerAt(BattleState.POS.OPPONENT_RIGHT)
+  if foe and foe.mon and not foe.fainted
+     and not self:sideArriving(false, slide)
+     and not self:growInScale(foe) then
+    out[#out + 1] = { side = "enemy", battler = foe,
+                      rect = BattleState.FLANK_HUD_RECT.enemy }
+  end
+  local ally = self:battlerAt(BattleState.POS.PLAYER_RIGHT)
+  if ally and ally.mon and not (self.safari or self:demoHidesPlayer())
+     and not self:sideArriving(true, slide)
+     and not self:growInScale(ally) then
+    out[#out + 1] = { side = "player", battler = ally,
+                      rect = BattleState.FLANK_HUD_RECT.player }
+  end
+  return out
+end
+
 -- the BG-tile UI: HUDs, pokeball rows, safari ball count.  Grayscale;
 -- the zone pass colors it in colorized mode.
 function BattleState:drawHUDs(slide)
@@ -10185,6 +10350,23 @@ function BattleState:drawHUDs(slide)
       for i = 10, 17 do hudTile(0x76, i * 8, 88) end
     end
     hudTile(0x6F, 72, 88)
+  end
+
+  -- the right-hand pair's compact boxes (see flankHuds); nil in a single
+  for _, box in ipairs(self:flankHuds(slide) or {}) do
+    local b, r = box.battler, box.rect
+    local tx, ty = r[1] / 8, r[2] / 8
+    love.graphics.setColor(0, 0, 0, 1)
+    drawHudName(b.name, r[1], r[2], r[1] + r[3])
+    local hp = { hp = shownHP(b), stats = b.mon.stats }
+    if box.side == "player" then
+      drawHPBar(barData, tx, ty + 1, hp, 1, grayFill, 5)
+      love.graphics.setColor(0, 0, 0, 1)
+      Font.draw(("%3d/%3d"):format(shownHP(b), b.mon.stats.hp),
+                r[1] + 8, r[2] + 16)
+    else
+      drawHPBar(barData, tx + 1, ty + 1, hp, nil, grayFill, 5)
+    end
   end
 end
 

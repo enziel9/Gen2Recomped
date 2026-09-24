@@ -1789,6 +1789,14 @@ OverworldBattle.sideVisible = sideVisible
 -- true -- which is `self.double == true and BattleState.DOUBLES_READY == true`
 -- (:2701). A single battle never sets `double`, and Gen 1, Gen 2 and Prism
 -- have no double battles at all, so neither can reach past the first line.
+--
+-- ...UNLESS A MOD ASKS FOR ONE. start_battle takes { double = true } on any
+-- cartridge, and a Crystal trainer fought that way is a Game Boy double. The
+-- engine now draws that screen's right-hand pair too -- its own classic pass
+-- in drawPicsLayer, with these same guards -- so the question below has the
+-- same answer on that layout as on Emerald's, and nothing here changed for it.
+-- Where the partner stands INSIDE the texture is the flankPlacement wrapper's
+-- business (see install).
 local leftFlankVisible = sideVisible
 sideVisible = function(battle, side)
   if leftFlankVisible(battle, side) then return true end
@@ -2386,6 +2394,54 @@ function OverworldBattle.install()
     return fx, fy, s
   end
 
+  -- ------- AND THE PARTNER STANDS BESIDE THE LEAD, NOT ON TOP OF IT
+  --
+  -- A Game Boy double (a mod forcing { double = true } onto a Crystal
+  -- trainer) draws its right-hand pair through BattleState.flankPlacement:
+  -- the partner's own pic is placed by frontPlacement / backPlacement as if
+  -- it were the lead, then shrunk to half about its feet and slid over.  In
+  -- THIS render the two wrappers above have already put that "as if it were
+  -- the lead" at TEX_AX / TEX_AY -- the very point the lead is hung from --
+  -- so the engine's half-size slide would leave the partner a small copy
+  -- standing inside the lead's own silhouette.
+  --
+  -- So while a texture is being rendered the partner is re-placed here, the
+  -- way the lead is: at scale 1 like every other pic in this canvas (see
+  -- resolveBattleScale above -- a half-size partner would be resampled into
+  -- the texture and again onto the card), feet on the same row, and its
+  -- centre TEX_FLANK_DX to the side -- the foe's partner to the camera's
+  -- left, the player's to its right, which is where Emerald stands them.
+  --
+  -- BOTH GO TO THE CANVAS'S LEFT, and that is not a slip. BattleScene's
+  -- monMatrix MIRRORS the player's card about its anchor column (the near mon
+  -- wears its front pic and is flipped to face the far one), so canvas-left on
+  -- that side is the camera's right. The one player card that is not mirrored
+  -- is the trainer's back pic, and no partner is ever drawn beside it: the
+  -- side is still arriving (BattleState:sideArriving) for as long as it is up.
+  --
+  -- TEX_FLANK_DX is derived, not tuned: it is the distance that puts a full
+  -- front slot's edge on the canvas edge, so the widest pic this port has
+  -- still lands whole and the pair overlap by only their slots' margins.
+  --
+  -- The card is still ONE quad per side, hung from the lead's anchor: the
+  -- partner is part of that side's picture, the way a trainer's two Pokemon
+  -- are one side of the field, and nothing downstream -- BattleCam, the
+  -- shadow pass, the stamp -- has to learn there are two.
+  --
+  -- Outside the render this answers exactly what the engine does, and a
+  -- single battle never calls it at all.
+  local innerFlank = BattleState.flankPlacement
+  if innerFlank then
+    local TEX_FLANK_DX = TEX_AX - OverworldBattle.SLOT_W.front / 2
+    function BattleState.flankPlacement(isPlayer, x, y, w, h, pad, scale)
+      local fx, fy, s = innerFlank(isPlayer, x, y, w, h, pad, scale)
+      if not texturing then return fx, fy, s end
+      local cx = x + w * scale / 2
+      local feet = y + (h - pad) * scale
+      return cx - TEX_FLANK_DX - w / 2, feet - (h - pad), 1
+    end
+  end
+
   local innerDraw = BattleState.draw
   function BattleState:draw()
     local shot = OverworldBattle.shot()
@@ -2721,6 +2777,43 @@ function OverworldBattle.hudLive(battle, slide)
   return enemy and true or false, player and true or false
 end
 
+-- ------- AND THE RIGHT-HAND PAIR'S BOXES, WHEN A GAME BOY SCREEN HAS FOUR
+--
+-- A double forced onto a Crystal trainer draws two compact boxes beside the
+-- two blocks above (BattleState:flankHuds): the foe's partner under the foe's
+-- block, rows 32-48, and the player's partner left of the player's, rows
+-- 48-72. Black glyphs on grass, like the blocks were before they had glass --
+-- so they get glass the same way, and a vote in the same ink verdict.
+--
+-- ASKED, NOT MIRRORED. hudLive has to duplicate drawHUDs' guards because
+-- nothing reports them; flankHuds is the engine's own answer to "which boxes
+-- is it about to draw, and where", the one drawHUDs itself draws from, so the
+-- glass cannot go down under a box that is not there or miss one that is.
+--
+-- The rows are what keep this simple: both boxes sit wholly inside their own
+-- side's HUD_BAND (the foe's ends at 48, the player's starts there), so the
+-- band snap already carries each out to the right window edge with the block
+-- it belongs to, and nothing new is cut. And hudDrop answers 0 for a double,
+-- so the player's band is not moved under its partner's glass.
+--
+-- Keyed by side, `{ enemy = rect, player = rect }` in GB pixels, and EMPTY --
+-- not nil -- for a single battle, an Emerald battle, or an engine without the
+-- seam, so every caller can iterate it unconditionally and a single battle
+-- adds no panel and no verdict sample.
+function OverworldBattle.flankHudRects(battle, slide)
+  local out = {}
+  if not (battle and type(battle.flankHuds) == "function") then return out end
+  local ok, boxes = pcall(battle.flankHuds, battle, slide)
+  if not (ok and type(boxes) == "table") then return out end
+  for _, box in ipairs(boxes) do
+    if (box.side == "enemy" or box.side == "player")
+       and type(box.rect) == "table" then
+      out[box.side] = box.rect
+    end
+  end
+  return out
+end
+
 -- ------- the snapped composite
 --
 -- The engine's own HUD layer, rendered into a texture.
@@ -2849,6 +2942,16 @@ function OverworldBattle.snapHUDs(battle, shot)
   local live = {}
   if enemy then live.enemy = rects.enemy end
   if player then live.player = rects.player end
+  -- the right-hand pair's compact boxes on a Game Boy double, each carried
+  -- out with the band its rows sit in (see OverworldBattle.flankHudRects)
+  local sc = shot.scale
+  for side, r in pairs(OverworldBattle.flankHudRects(battle, slide)) do
+    local x0 = bandX[side]
+    if x0 then
+      live[side .. "Flank"] = { x0 + r[1] * sc, shot.ly + r[2] * sc,
+                                r[3] * sc, r[4] * sc }
+    end
+  end
   -- and the text box's own glass, on the same pass. It stays in the middle of
   -- the frame where the engine draws it -- only the HUDs were snapped out --
   -- so its GB rect is mapped into the letterbox rather than to an edge.
@@ -2962,6 +3065,9 @@ function OverworldBattle.drawHudPanels(battle)
   local live = {}
   if enemy then live.enemy = rect.enemy end
   if player then live.player = rect.player end
+  for side, r in pairs(OverworldBattle.flankHudRects(battle, slide)) do
+    live[side .. "Flank"] = r
+  end
   for key, r in pairs(OverworldBattle.textRects(battle)) do live[key] = r end
   if not next(live) then return end
   local dark = BattleHud.verdict(live, shot)
