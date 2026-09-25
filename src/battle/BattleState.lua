@@ -9763,9 +9763,21 @@ end
 -- ---------------------------------------------------------------------------
 BattleState.FLANK_SCALE = 0.5
 BattleState.FLANK_OFFSET = { enemy = { -32, 0 }, player = { 32, 0 } }
-BattleState.FLANK_OFFSET_MIN = 32
+-- Raised from 32 (Matteo, 2026-09-25): a real lead's pic sheet is 40-48px
+-- wide in this port's data (confirmed live, Tepig/Servine/Umbreon), so
+-- leadW * 0.45 (18-22px) never actually clears the floor -- every real
+-- pairing was landing on the OLD flat 32px, which still let the flank
+-- overlap the lead's body/tail. 48 is picked from that measured range, not
+-- guessed; the *0.45 scaling stays for the rare lead wider than ~107px.
+BattleState.FLANK_OFFSET_MIN = 48
 
-function BattleState.flankPlacement(isPlayer, x, y, w, h, pad, scale)
+-- `leadW` is the LEAD's own pixel width, separate from `w` (the flank's own
+-- sprite, which still sizes footX/the final centering below) -- defaults to
+-- `w` so an old caller that never learned about the lead keeps today's
+-- shape. See the fix note at the call site (drawPicsLayer) for why this
+-- split exists: passing the flank's width for both used to size the
+-- clearance off the SMALL sprite and left it overlapping a wide lead.
+function BattleState.flankPlacement(isPlayer, x, y, w, h, pad, scale, leadW)
   local footX, footY = x + w * scale / 2, y + (h - pad) * scale
   local o = BattleState.FLANK_OFFSET[isPlayer and "player" or "enemy"]
   local sign = o[1] < 0 and -1 or 1
@@ -9775,7 +9787,7 @@ function BattleState.flankPlacement(isPlayer, x, y, w, h, pad, scale)
   -- Scaling with the lead's pixel width keeps the partner clear of it; the
   -- old 32px stays as a floor so a narrow lead doesn't pull the partner in
   -- too close.
-  local ox = sign * math.max(BattleState.FLANK_OFFSET_MIN, w * 0.45)
+  local ox = sign * math.max(BattleState.FLANK_OFFSET_MIN, (leadW or w) * 0.45)
   local s = scale * BattleState.FLANK_SCALE
   return footX + ox - w * s / 2, footY + o[2] - (h - pad) * s, s
 end
@@ -9868,7 +9880,16 @@ function BattleState:drawPicsLayer(slide, sx, sy, onlySide, skipMenuClip)
             local ex, ey = enemyPicXY(img, slide, 0, 0)
             x, y = BattleState.frontPlacement(ex, ey, w, h, s)
           end
-          x, y, s = BattleState.flankPlacement(mine, x, y, w, h, pad, s)
+          -- flankPlacement's clearance scales with the LEAD's pixel width so
+          -- a wide lead (Tepig) doesn't swallow a narrow partner (Umbreon);
+          -- `w` above is the FLANK's own width (needed for its own
+          -- footX/centering) so the lead's width is looked up separately
+          -- and passed as leadW. self.player/self.enemy are the leads,
+          -- already resolved and on screen at this point.
+          local lead = mine and self.player or self.enemy
+          local leadImg = lead and lead.sprite and self:picImage(lead.sprite)
+          local leadW = leadImg and leadImg:getWidth() or w
+          x, y, s = BattleState.flankPlacement(mine, x, y, w, h, pad, s, leadW)
           -- a replacement sent into this slot grows out of its ball like a
           -- lead does, about the same feet
           local gs = self:growInScale(b)
@@ -10191,7 +10212,13 @@ end
 -- ---------------------------------------------------------------------------
 BattleState.FLANK_HUD_RECT = {
   enemy = { 8, 32, 72, 16 },
-  player = { 8, 48, 64, 24 },
+  -- Widened from 64 to 92 (Matteo, 2026-09-25): the player box carries a
+  -- third row (exact HP numbers) the enemy one does not, and at 64px wide
+  -- the name/Lv row and the numbers row both read cramped. No more
+  -- vertical room exists (8px clearance to the enemy flank above and the
+  -- player lead's own name row below), so the fix is horizontal: 92px
+  -- still clears the flank sprite slot (~x96+) with margin.
+  player = { 8, 48, 92, 24 },
 }
 
 function BattleState:flankHuds(slide)
