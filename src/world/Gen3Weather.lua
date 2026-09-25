@@ -94,6 +94,18 @@ local LOOKS = {
     colour = { 0.94, 0.86, 0.62, 0.55 },
   },
 
+  -- Battle-only variant of SANDSTORM (see BattleState:drawClassicWeather):
+  -- the field version reads fine against Hoenn's terrain but washes out to
+  -- almost nothing over the arena's pale tile floor -- bigger grains, a
+  -- darker sand tone and more of them so the horizontal blow actually
+  -- reads as streaks instead of a flat tint. Field weather (Route 111 etc)
+  -- is untouched; this key is never looked up outside the battle screen.
+  SANDSTORM_ARENA = {
+    veil = { 0.72, 0.58, 0.30, 0.24 },
+    count = 140, vx = -7.5, vy = 0.8, size = { 14, 2 }, wrap = "blow",
+    colour = { 0.62, 0.48, 0.20, 0.75 },
+  },
+
   FOG_HORIZONTAL = {
     veil = { 0.86, 0.88, 0.90, 0.30 },
     count = 14, vx = -0.22, vy = 0, size = { 96, 12 }, wrap = "blow",

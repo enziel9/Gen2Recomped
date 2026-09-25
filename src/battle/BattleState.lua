@@ -9763,12 +9763,21 @@ end
 -- ---------------------------------------------------------------------------
 BattleState.FLANK_SCALE = 0.5
 BattleState.FLANK_OFFSET = { enemy = { -32, 0 }, player = { 32, 0 } }
+BattleState.FLANK_OFFSET_MIN = 32
 
 function BattleState.flankPlacement(isPlayer, x, y, w, h, pad, scale)
   local footX, footY = x + w * scale / 2, y + (h - pad) * scale
   local o = BattleState.FLANK_OFFSET[isPlayer and "player" or "enemy"]
+  local sign = o[1] < 0 and -1 or 1
+  -- The old flat 32px offset still let a wide lead (e.g. Tepig) overlap its
+  -- half-scale partner (e.g. Umbreon): 32px of separation from the lead's
+  -- OWN foot point doesn't scale with how wide that lead actually is.
+  -- Scaling with the lead's pixel width keeps the partner clear of it; the
+  -- old 32px stays as a floor so a narrow lead doesn't pull the partner in
+  -- too close.
+  local ox = sign * math.max(BattleState.FLANK_OFFSET_MIN, w * 0.45)
   local s = scale * BattleState.FLANK_SCALE
-  return footX + o[1] - w * s / 2, footY + o[2] - (h - pad) * s, s
+  return footX + ox - w * s / 2, footY + o[2] - (h - pad) * s, s
 end
 
 -- Where the classic layout's right-hand flanks are drawn at all: a genuine
@@ -10368,12 +10377,17 @@ function BattleState:drawHUDs(slide)
     hudTile(0x6F, 72, 88)
   end
 
-  -- the right-hand pair's compact boxes (see flankHuds); nil in a single
+  -- the right-hand pair's compact boxes (see flankHuds); nil in a single.
+  -- No room for the full <LV> tile + name at this width, so the level
+  -- takes a fixed-width "Lv99" slot on the right and the name's own budget
+  -- (drawHudName's squeeze-to-fit) shrinks to make room for it.
+  local FLANK_LV_W = 24
   for _, box in ipairs(self:flankHuds(slide) or {}) do
     local b, r = box.battler, box.rect
     local tx, ty = r[1] / 8, r[2] / 8
     love.graphics.setColor(0, 0, 0, 1)
-    drawHudName(b.name, r[1], r[2], r[1] + r[3])
+    drawHudName(b.name, r[1], r[2], r[1] + r[3] - FLANK_LV_W)
+    Font.draw("Lv" .. tostring(b.mon.level), r[1] + r[3] - FLANK_LV_W, r[2])
     local hp = { hp = shownHP(b), stats = b.mon.stats }
     if box.side == "player" then
       drawHPBar(barData, tx, ty + 1, hp, 1, grayFill, 5)
@@ -10604,11 +10618,36 @@ end
 -- strings Gen3Weather.forBattle's own fallback table maps by name -- so this
 -- is that same wiring pointed at the classic 160x144 field instead of
 -- Emerald's wide one, no ROM battle-weather table required.
+-- FOG has no cartridge battle-weather name to fall through Gen3Weather's
+-- own table (it is not one of the sixteen), so it is resolved here instead
+-- of through forBattle. SANDSTORM_ARENA is the fullscreen-only look (see
+-- Gen3Weather.LOOKS) that replaces plain SANDSTORM once the arena covers
+-- the whole window rather than the small classic inset.
+local ARENA_LOOK_OVERRIDE = { SANDSTORM = "SANDSTORM_ARENA" }
+
 function BattleState:drawClassicWeather(sx, sy)
   local current = Weather.current(self)
   if not current then return end
-  local name = Gen3Weather.forBattle(current, nil)
+  local name = current == "FOG" and "FOG_HORIZONTAL"
+    or Gen3Weather.forBattle(current, nil)
   if not name then return end
+  -- DRAMATIC_SHAPE stages the battle over a full-window 3D diorama; the
+  -- 160x96 draw below only ever covers the classic letterboxed inset that
+  -- mod composites on top of it, so the rain/sun/sandstorm reads as boxed
+  -- in a small frame instead of covering the arena -- same bug the
+  -- overworld had ("a weird box overlay ... should fit the full screen"),
+  -- fixed there via Renderer.screenWeather (OverworldController.lua
+  -- drawFieldWeather). Same fix here, gated on the shot actually being up
+  -- so a plain/no-mod battle keeps drawing locally exactly as before.
+  local renderer = self.game and self.game.renderer
+  if self.dramaticShapeShot and renderer then
+    local frame = self.frame or 0
+    local arenaName = ARENA_LOOK_OVERRIDE[name] or name
+    renderer.screenWeather = function(w, h)
+      return Gen3Weather.draw(arenaName, frame, w, h)
+    end
+    return
+  end
   local g = love.graphics
   local shifted = (sx or 0) ~= 0 or (sy or 0) ~= 0
   if shifted then g.push() g.translate(sx, sy) end

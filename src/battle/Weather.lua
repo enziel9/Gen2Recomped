@@ -29,6 +29,10 @@ Weather.SANDSTORM = "SANDSTORM"
 -- that is not an ICE type for an eighth of maximum HP, exactly as the
 -- sandstorm does for everything that is not ROCK, GROUND or STEEL.
 Weather.HAIL = "HAIL"
+-- FOG is pokemon_wish's own addition, not the cartridge's: no chip damage,
+-- boosts GHOST-type move damage the way RAIN boosts WATER (see
+-- TYPE_MODIFIERS below). Uses Gen3Weather's existing FOG_HORIZONTAL look.
+Weather.FOG = "FOG"
 
 -- `ld a, 5 / ld [wWeatherCount], a`.  HandleWeather decrements at the end of
 -- the SAME turn the move landed, so five upkeeps run in total and the first
@@ -44,6 +48,7 @@ local MORE, LESS = 15, 5
 local TYPE_MODIFIERS = {
   RAIN = { WATER = MORE, FIRE = LESS },
   SUN  = { FIRE = MORE, WATER = LESS },
+  FOG  = { GHOST = MORE },
 }
 
 -- WeatherMoveModifiers: (weather, move effect) -> modifier.  Exactly one row
@@ -60,12 +65,14 @@ local CONTINUE_TEXT = {
   SUN = "The sunlight is\nstrong.",
   SANDSTORM = "The SANDSTORM\nrages.",
   HAIL = "Hail continues to\nfall.",
+  FOG = "The fog is\nthick.",
 }
 local ENDED_TEXT = {
   RAIN = "The rain stopped.",
   SUN = "The sunlight\nfaded.",
   SANDSTORM = "The SANDSTORM\nsubsided.",
   HAIL = "The hail stopped.",
+  FOG = "The fog lifted.",
 }
 
 -- the text each move prints when it lands (DownpourText / SunGotBrightText /
@@ -75,6 +82,7 @@ Weather.STARTED_TEXT = {
   SUN = "The sunlight got\nbright!",
   SANDSTORM = "A SANDSTORM\nbrewed!",
   HAIL = "It started to hail!",
+  FOG = "A thick fog\ndescended!",
 }
 
 -- ---------------------------------------------------------------------
