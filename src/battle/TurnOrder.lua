@@ -125,7 +125,7 @@ function TurnOrder.order(entries, rng, battle)
     for i = 1, n - pass do
       local a, b = entries[i], entries[i + 1]
       if not TurnOrder.firstMover(a.battler, a.move, b.battler, b.move,
-                                  rng, false, battle) then
+                                  rng, false, battle, battle and battle.data) then
         entries[i], entries[i + 1] = b, a
         swapped = true
       end

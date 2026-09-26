@@ -212,9 +212,20 @@ Status.RECORDS = {
       end
       return true, {}
     end,
-    canInflict = function(target, opts)
+    canInflict = function(target, opts, battle)
       -- ParalyzeEffect_: Electric-type moves can't paralyze Ground-types
-      return not (opts.moveType == "ELECTRIC" and hasType(target, "GROUND"))
+      if opts.moveType == "ELECTRIC" and hasType(target, "GROUND") then
+        return false
+      end
+      -- Gen VI: Electric-type Pokemon are immune to paralysis outright,
+      -- not just to Electric-type moves (Polished's own note, no Gen 1/2
+      -- precedent). Arrives through the ruleset like poisonImmuneTypes,
+      -- not written into the record, so a Gen 1/2 battle keeps its own
+      -- numbers when the ruleset says nothing.
+      for _, t in ipairs(rule(battle, "paralysisImmuneTypes") or {}) do
+        if hasType(target, t) then return false end
+      end
+      return true
     end,
     onInflict = function(_, _, _, display)
       -- _ParalyzedMayNotAttackText (primary and secondary paralysis)

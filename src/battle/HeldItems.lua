@@ -8,6 +8,7 @@
 
 local ItemEffects = require("src.inventory.ItemEffects")
 local Strings = require("src.core.Strings")
+local GameVersion = require("src.core.GameVersion")
 
 local HeldItems = {}
 
@@ -42,6 +43,9 @@ HeldItems.EFFECT = {
   DRAGON_BOOST = 64,
   DARK_BOOST = 65,
   STEEL_BOOST = 66,
+  -- not a Crystal constant (Crystal has no Fairy); only reached by
+  -- translating Polished Crystal's HELD_TYPE_BOOST, FAIRY
+  FAIRY_BOOST = 67,
   ESCAPE = 72,
   CRITICAL_UP = 73,
   QUICK_CLAW = 74,
@@ -56,8 +60,84 @@ local TYPE_BY_EFFECT = {
   [53] = "POISON", [54] = "GROUND", [55] = "ROCK", [56] = "BUG",
   [57] = "GHOST", [58] = "FIRE", [59] = "WATER", [60] = "GRASS",
   [61] = "ELECTRIC", [62] = "PSYCHIC", [63] = "ICE", [64] = "DRAGON",
-  [65] = "DARK", [66] = "STEEL",
+  [65] = "DARK", [66] = "STEEL", [67] = "FAIRY",
 }
+
+-- Polished Crystal renumbered constants/item_data_constants.asm (HELD_LEFTOVERS
+-- is 2 there, 3 in Crystal; HELD_LIFE_ORB 50 lands on Crystal's
+-- HELD_NORMAL_BOOST) and changed what several params mean, so its raw
+-- ItemAttributes bytes are translated onto the Crystal numbering the rest of
+-- this file speaks.  Polished-only effects (Life Orb, Choice, Assault Vest...)
+-- are left unmapped and therefore do nothing rather than the wrong thing.
+local POLISHED = {
+  BERRY = 1, LEFTOVERS = 2, RESTORE_PP = 3, CLEANSE_TAG = 4,
+  HEAL_STATUS = 5, HEAL_CONFUSE = 6, METAL_POWDER = 13, TYPE_BOOST = 16,
+  ESCAPE = 19, CRITICAL_UP = 20, FLINCH_UP = 21, QUICK_CLAW = 22,
+  AMULET_COIN = 23, BRIGHTPOWDER = 24, FOCUS_BAND = 25,
+}
+
+local POLISHED_DIRECT = {
+  [POLISHED.BERRY] = HeldItems.EFFECT.BERRY,
+  [POLISHED.LEFTOVERS] = HeldItems.EFFECT.LEFTOVERS,
+  [POLISHED.RESTORE_PP] = HeldItems.EFFECT.RESTORE_PP,
+  [POLISHED.CLEANSE_TAG] = HeldItems.EFFECT.CLEANSE_TAG,
+  [POLISHED.HEAL_CONFUSE] = HeldItems.EFFECT.HEAL_CONFUSION,
+  [POLISHED.METAL_POWDER] = HeldItems.EFFECT.METAL_POWDER,
+  [POLISHED.ESCAPE] = HeldItems.EFFECT.ESCAPE,
+  [POLISHED.CRITICAL_UP] = HeldItems.EFFECT.CRITICAL_UP,
+  [POLISHED.AMULET_COIN] = HeldItems.EFFECT.AMULET_COIN,
+  [POLISHED.FOCUS_BAND] = HeldItems.EFFECT.FOCUS_BAND,
+}
+
+-- HELD_HEAL_STATUS carries a status bitmask as its param (PSN bit 3, BRN 4,
+-- FRZ 5, PAR 6, SLP_MASK %111; ALL_STATUS $FF reads back signed as -1).
+local POLISHED_STATUS_MASK = {
+  [8] = HeldItems.EFFECT.HEAL_POISON,
+  [16] = HeldItems.EFFECT.HEAL_BURN,
+  [32] = HeldItems.EFFECT.HEAL_FREEZE,
+  [64] = HeldItems.EFFECT.HEAL_PARALYZE,
+  [7] = HeldItems.EFFECT.HEAL_SLEEP,
+  [-1] = HeldItems.EFFECT.HEAL_STATUS,
+}
+
+-- HELD_TYPE_BOOST carries the type id (constants/type_constants.asm).
+local POLISHED_TYPE_BOOST = {
+  [0] = HeldItems.EFFECT.NORMAL_BOOST, HeldItems.EFFECT.FIGHTING_BOOST,
+  HeldItems.EFFECT.FLYING_BOOST, HeldItems.EFFECT.POISON_BOOST,
+  HeldItems.EFFECT.GROUND_BOOST, HeldItems.EFFECT.ROCK_BOOST,
+  HeldItems.EFFECT.BUG_BOOST, HeldItems.EFFECT.GHOST_BOOST,
+  HeldItems.EFFECT.STEEL_BOOST, HeldItems.EFFECT.FIRE_BOOST,
+  HeldItems.EFFECT.WATER_BOOST, HeldItems.EFFECT.GRASS_BOOST,
+  HeldItems.EFFECT.ELECTRIC_BOOST, HeldItems.EFFECT.PSYCHIC_BOOST,
+  HeldItems.EFFECT.ICE_BOOST, HeldItems.EFFECT.DRAGON_BOOST,
+  HeldItems.EFFECT.DARK_BOOST, HeldItems.EFFECT.FAIRY_BOOST,
+}
+
+-- Params rescaled to this file's conventions: chances here are out of 256,
+-- Polished's QUICK_CLAW/FLINCH_UP are percent (BattleRandomRange 100); type
+-- boosts are x1.2 (`ln a, 6, 5`), not Crystal's param-percent 10.
+-- BRIGHTPOWDER is a x0.9 multiplier there ($9a) and a flat subtraction from
+-- the 0-255 threshold here: 26 is 10% of a sure hit.
+local function translatePolished(raw, param)
+  local direct = POLISHED_DIRECT[raw]
+  if direct then return direct, param end
+  if raw == POLISHED.HEAL_STATUS then
+    return POLISHED_STATUS_MASK[param] or HeldItems.EFFECT.NONE, 0
+  elseif raw == POLISHED.TYPE_BOOST then
+    return POLISHED_TYPE_BOOST[param] or HeldItems.EFFECT.NONE, 20
+  elseif raw == POLISHED.QUICK_CLAW then
+    return HeldItems.EFFECT.QUICK_CLAW, math.floor(param * 256 / 100)
+  elseif raw == POLISHED.FLINCH_UP then
+    return HeldItems.EFFECT.FLINCH, math.floor(param * 256 / 100)
+  elseif raw == POLISHED.BRIGHTPOWDER then
+    return HeldItems.EFFECT.BRIGHTPOWDER, 26
+  end
+  return HeldItems.EFFECT.NONE, 0
+end
+
+local function polishedNumbering()
+  return GameVersion.get() == "polishedcrystal"
+end
 
 local STATUS_BY_EFFECT = {
   [HeldItems.EFFECT.HEAL_POISON] = "PSN",
@@ -111,6 +191,11 @@ function HeldItems.effect(data, holder)
   -- Crystal accidentally assigns HELD_DRAGON_BOOST to Dragon Scale and leaves
   -- Dragon Fang with HELD_NONE.  Treat Dragon Fang as the Dragon-type booster
   -- and Dragon Scale as a normal held item instead of reproducing that bug.
+  local raw = tonumber(def.heldEffect) or HeldItems.EFFECT.NONE
+  local param = tonumber(def.heldParam) or 0
+  -- Polished's own attributes already give Dragon Fang the Dragon boost.
+  if polishedNumbering() then return translatePolished(raw, param) end
+
   local key = norm(ItemEffects.alias(id, def) or def.key or def.name or id)
   if key == "DRAGON_FANG" then
     return HeldItems.EFFECT.DRAGON_BOOST, 10
@@ -118,8 +203,7 @@ function HeldItems.effect(data, holder)
     return HeldItems.EFFECT.NONE, 0
   end
 
-  return tonumber(def.heldEffect) or HeldItems.EFFECT.NONE,
-         tonumber(def.heldParam) or 0
+  return raw, param
 end
 
 local function speciesKey(holder)
@@ -423,6 +507,14 @@ local function processHealingItem(battle, holder)
   if effect == HeldItems.EFFECT.BERRY then
     local maxHP = mon.stats and tonumber(mon.stats.hp)
     if maxHP and mon.hp * 2 <= maxHP then
+      -- Polished's Sitrus and Figy carry param 0; _HeldHPHealingItem heals
+      -- a quarter / a third of max HP for them by item id instead.
+      local key = HeldItems.itemKey(battle.data, holder)
+      if key == "SITRUS_BERRY" then
+        param = math.floor(maxHP / 4)
+      elseif key == "FIGY_BERRY" then
+        param = math.floor(maxHP / 3)
+      end
       local got = heal(holder, param)
       if got > 0 then
         consume(holder)

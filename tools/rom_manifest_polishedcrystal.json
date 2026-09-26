@@ -5187,6 +5187,7 @@
     "ITEM_254",
     "ITEM_255"
   ],
+  "itemPockets": ["ITEM", "ITEM", "BALL", "TM_HM", "ITEM", "KEY_ITEM"],
   "layout": {
     "audioRowCries": 2,
     "audioRowMusic": 3,
@@ -5214,6 +5215,10 @@
     "evoSpeciesWord": 1,
     "hmCount": 7,
     "huffmanText": 1,
+    "itemAttrBytes": 6,
+    "itemAttrPocketAt": 4,
+    "itemAttrPropertyAt": -1,
+    "itemNameBias": 1,
     "lzAlternateExtra": 2,
     "lzIterateExtra": 1,
     "mapAttrConnectionFlags": 9,
@@ -5267,6 +5272,7 @@
     "trainerGroupBytes": 3,
     "trainerPartyBits": 1,
     "tutorCount": 35,
+    "typeMatchupScale": 16,
     "typeNamesOffsets": 1,
     "wildSlotBytes": 3
   },

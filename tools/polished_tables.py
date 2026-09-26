@@ -691,6 +691,15 @@ def main():
     # of the cartridge was read correctly.
     layout = man.get("layout") or {}
     layout["huffmanText"] = 1
+    # item_attribute is six bytes here (dw price, db effect, param, pocket,
+    # dn menus -- data/items/attributes.asm), with no property byte, and
+    # ItemNames opens with id 0 ("Park Ball" = NO_ITEM).  Pockets are ITEM,
+    # MEDICINE, BALL, TM_HM, BERRIES, KEY_ITEM, folded onto the engine's four.
+    layout["itemAttrBytes"] = 6
+    layout["itemAttrPocketAt"] = 4
+    layout["itemAttrPropertyAt"] = -1
+    layout["itemNameBias"] = 1
+    man["itemPockets"] = ["ITEM", "ITEM", "BALL", "TM_HM", "ITEM", "KEY_ITEM"]
     # THREE BYTES PER WILD SLOT, not Gen 2's two: this hack carries a FORM byte
     # after the species. Read at Crystal's stride the table decodes one byte
     # further out of step with every slot -- the first two entries come back
@@ -1037,6 +1046,10 @@ def main():
     # run Normal..Fairy, ??? at 18, and the egg-group names share the same
     # table from 19 up.
     layout["typeNamesOffsets"] = 1
+    # TypeMatchups multipliers are q4 fixed point (battle_constants.asm:
+    # SUPER_EFFECTIVE 2.0q4 = $20, NOT_VERY_EFFECTIVE 0.5q4 = $08), not
+    # Crystal's x10; the extractor rescales by this divisor.
+    layout["typeMatchupScale"] = 16
     # MOVE ROWS ARE EIGHT BYTES with the phys/special/status category in
     # the eighth (GetMoveAttr 00:$3558 indexes by `ld bc,$0008`; Swords
     # Dance 2 / Tackle 0 / Flamethrower 1), and accuracy is PLAIN PERCENT

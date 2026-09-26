@@ -949,6 +949,16 @@ function RomExtractorGen2:constants()
     -- Generation is runtime metadata, not cartridge data.  Battle formulas use
     -- it to select the Gen II critical-hit ladder without guessing from a ROM id.
     self._constants.generation = 2
+    -- Polished plays by its own battle rules (crit 150% not 200%, Steel
+    -- immune to poison, Electric immune to paralysis outright -- see
+    -- FEATURES.md in the polishedcrystal checkout and
+    -- src/battle/rulesets/gen6_polished.lua for the citations). Written
+    -- here rather than left for the player to pick in OptionsMenu because
+    -- this is the cartridge's own behaviour, not an optional house rule --
+    -- same reasoning as `generation` two lines up.
+    if self.version == "polishedcrystal" then
+      self._constants.defaultRuleset = "gen6_polished"
+    end
     local badges = {}
     -- A CARTRIDGE MAY HAVE ITS OWN SET.  Prism awards TWENTY badges across
     -- three engine-flag bytes, and its flag keys keep the ENGINE_ prefix that
@@ -2337,16 +2347,29 @@ function RomExtractorGen2:extractScaffoldCore()
       -- (engine/items/item_effects.asm GetItemPrice).  Without it every mart
       -- shelf priced at 0 and BUY handed the stock out for free.
       local attrs = self:symbol("ItemAttributes")
+      -- Polished Crystal's item_attribute is SIX bytes (dw price, db effect,
+      -- param, pocket, dn field/battle menu -- data/items/attributes.asm),
+      -- with no property byte; its ItemNames opens with an entry for id 0
+      -- ("Park Ball" = NO_ITEM); and its pockets are ITEM, MEDICINE, BALL,
+      -- TM_HM, BERRIES, KEY_ITEM.  Read at Crystal's 7-byte stride every
+      -- heldEffect past the first row was a neighbouring byte, and every
+      -- item wore the previous id's name.
+      local attrBytes = self:layout("itemAttrBytes", GEN2_ITEM_ATTR_BYTES)
+      local attrPocketAt = self:layout("itemAttrPocketAt", 5)
+      local attrPropertyAt = self:layout("itemAttrPropertyAt", 4)
+      local itemNameBias = self:layout("itemNameBias", 0)
+      local pocketNames = self.manifest and self.manifest.itemPockets
+        or { "ITEM", "KEY_ITEM", "BALL", "TM_HM" }
       for id, entry in pairs(data) do
         if type(entry) == "table" and type(entry.index) == "number" then
-          local n = romNames[entry.index]
+          local n = romNames[entry.index + itemNameBias]
           if n then entry.name = n; entry.source = "ROM:ItemNames[" .. entry.index .. "]" end
           -- what the PACK prints in its bottom box while the cursor is on
           -- this row (engine/items/pack.asm); absent on a ROM whose
           -- ItemDescriptions symbol is missing, and the pack falls back
           entry.description = self:gen2ItemDescription(entry.index)
           if attrs then
-            local row = attrs.address + (entry.index - 1) * GEN2_ITEM_ATTR_BYTES
+            local row = attrs.address + (entry.index - 1) * attrBytes
             local ok, price = pcall(function() return self.rom:word(attrs.bank, row) end)
             if ok and type(price) == "number" then entry.price = price end
             -- constants/item_data_constants.asm: ItemAttributes stores the
@@ -2363,21 +2386,23 @@ function RomExtractorGen2:extractScaffoldCore()
             end)
             if okh then entry.heldParam = signedByte(heldParam) end
             local okp, pocket = pcall(function()
-              return self.rom:byte(attrs.bank, row + 5)
+              return self.rom:byte(attrs.bank, row + attrPocketAt)
             end)
             if okp then
-              entry.keyItem = pocket == GEN2_POCKET_KEY_ITEM or nil
               -- the pack's four pages (constants/item_data_constants.asm):
               -- ITEM, KEY_ITEM, BALL, TM_HM
-              entry.pocket = ({ [1] = "ITEM", [2] = "KEY_ITEM",
-                                [3] = "BALL", [4] = "TM_HM" })[pocket]
+              entry.pocket = pocketNames[pocket]
+              entry.keyItem = entry.pocket == "KEY_ITEM" or nil
             end
             -- the property byte holds CANT_SELECT (1<<6) and CANT_TOSS
             -- (1<<7); Pack.ItemBallsKey_LoadSubmenu builds USE/GIVE/TOSS/
             -- SEL/QUIT out of them, so SEL is offered when the bit is CLEAR
-            local okr, prop = pcall(function()
-              return self.rom:byte(attrs.bank, row + 4)
-            end)
+            local okr, prop = false, nil
+            if attrPropertyAt >= 0 then
+              okr, prop = pcall(function()
+                return self.rom:byte(attrs.bank, row + attrPropertyAt)
+              end)
+            end
             if okr and type(prop) == "number" then
               entry.registerable = math.floor(prop / 64) % 2 == 0 or nil
               entry.cantToss = math.floor(prop / 128) % 2 == 1 or nil
@@ -15494,6 +15519,12 @@ function RomExtractorGen2:extractRuntimeScaffolds()
 
   local matchupSym = self:symbol("TypeMatchups")
   if matchupSym and self.rom and #typeChart.matchups == 0 then
+    -- Polished Crystal stores the multiplier as q4 fixed point
+    -- (constants/battle_constants.asm: SUPER_EFFECTIVE 2.0q4 = $20,
+    -- NOT_VERY_EFFECTIVE 0.5q4 = $08), not Crystal's x10.  Rescaled here so
+    -- TypeChart and everything downstream keep speaking x10; read raw, $20
+    -- came out 3.2x and $08 0.8x.
+    local matchupScale = self:layout("typeMatchupScale", 10)
     local address = matchupSym.address
     for _ = 1, 256 do
       local first = self.rom:byte(matchupSym.bank, address)
@@ -15506,7 +15537,8 @@ function RomExtractorGen2:extractRuntimeScaffolds()
         local defender = self:gen2TypeName(row[2])
         if attacker and defender then
           typeChart.matchups[#typeChart.matchups + 1] = {
-            attacker = attacker, defender = defender, multiplier = row[3],
+            attacker = attacker, defender = defender,
+            multiplier = math.floor(row[3] * 10 / matchupScale + 0.5),
           }
         end
         address = address + 3

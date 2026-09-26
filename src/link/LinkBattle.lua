@@ -429,12 +429,13 @@ function LinkBattle.new(game, net, opts)
         local myMove, theirMove = orderMove(myAction), orderMove(theirAction)
         if Runtime.wantsHook("battle.turn_order") then
           first = Runtime.call("battle.turn_order", function(a, aMove, b, bMove, c)
-            return TurnOrder.firstMover(a, aMove, b, bMove, c.rng, c.invertTie, c.data)
+            return TurnOrder.firstMover(a, aMove, b, bMove, c.rng, c.invertTie,
+                                        c.battle, c.data)
           end, s.player, myMove, s.enemy, theirMove,
-             { rng = s.rng, invertTie = role == "guest", data = s.data })
+             { rng = s.rng, invertTie = role == "guest", battle = s, data = s.data })
         else
           first = TurnOrder.firstMover(s.player, myMove, s.enemy, theirMove,
-                                       s.rng, role == "guest", s.data)
+                                       s.rng, role == "guest", s, s.data)
         end
         local order
         if first then
@@ -814,12 +815,13 @@ function LinkBattle.newSpectator(game, net, opts)
         local first
         if Runtime.wantsHook("battle.turn_order") then
           first = Runtime.call("battle.turn_order", function(a, aMove, b, bMove, c)
-            return TurnOrder.firstMover(a, aMove, b, bMove, c.rng, c.invertTie, c.data)
+            return TurnOrder.firstMover(a, aMove, b, bMove, c.rng, c.invertTie,
+                                        c.battle, c.data)
           end, s.player, hostMove, s.enemy, guestMove,
-             { rng = s.rng, invertTie = false, data = s.data })
+             { rng = s.rng, invertTie = false, battle = s, data = s.data })
         else
           first = TurnOrder.firstMover(s.player, hostMove, s.enemy, guestMove,
-                                       s.rng, false, s.data)
+                                       s.rng, false, s, s.data)
         end
         local order
         if first then
