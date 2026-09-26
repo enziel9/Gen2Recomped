@@ -126,7 +126,8 @@ function Experience.apply(data, mon, defeatedDef, level, isTrainer,
   while mon.level < math.min(newLevel, cap) do
     mon.level = mon.level + 1
     local old = mon.stats
-    mon.stats = Stats.calc(speciesDef, mon.level, mon.dvs, mon.statExp)
+    mon.stats = Stats.calc(speciesDef, mon.level, mon.dvs, mon.statExp, nil,
+                           mon.nature)
     mon.hp = math.min(mon.stats.hp, mon.hp + (mon.stats.hp - old.hp))
     table.insert(levels, mon.level)
     if Runtime.wants("pokemon.level_up") then

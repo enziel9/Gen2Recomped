@@ -255,6 +255,7 @@ function EffectRegistry.runDamaging(battle, ctx, record)
 
   local totalDealt = 0
   local landed, brokeSub = 0, false
+  local unsubbedHits = 0 -- strikes that reached the mon itself (Rocky Helmet)
   for h = 1, hits do
     if target.mon.hp <= 0 then break end
     local hitRow
@@ -272,17 +273,25 @@ function EffectRegistry.runDamaging(battle, ctx, record)
     end
     local hadSub = target.substituteHP ~= nil
     local hitDamage = dmg
+    local savedBy, savedItem
     if not hadSub then
       -- This seam is reached only by direct attack damage. Weather, poison,
       -- Leech Seed and confusion self-hit never roll Focus Band here.
-      hitDamage = HeldItems.limitDirectDamage(battle.data, target, hitDamage,
-                                              battle.rng)
+      savedItem = target.mon.item or target.mon.heldItem
+      hitDamage, savedBy = HeldItems.limitDirectDamage(battle.data, target,
+                                                       hitDamage, battle.rng)
     end
     battle.lastDamage = hitDamage
     -- ...and the one applyDamage a Gen 3 FOCUS BAND answers: a move landing
     -- on someone
     local dealt = battle:applyDamage(target, hitDamage, true)
     totalDealt = totalDealt + dealt
+    if not hadSub and dealt > 0 then unsubbedHits = unsubbedHits + 1 end
+    -- Polished's HungOnText; Focus Sash is consumed inside limitDirectDamage
+    if savedBy == "FOCUS_SASH" then
+      battle:sayNext(Strings("%s\nhung on with\n%s!", displayName(target),
+                             HeldItems.itemName(battle.data, savedItem)))
+    end
     -- MIRROR COAT is COUNTER's special twin and needs the SPECIAL half of
     -- the damage kept separately; battle.lastDamage is shared by both and
     -- cannot answer for it.  Cleared at the head of every turn.
@@ -387,6 +396,16 @@ function EffectRegistry.runDamaging(battle, ctx, record)
   if totalDealt > 0 and target.mon.hp > 0 and not target.substituteHP
      and battle.abilityColorChange then
     battle:abilityColorChange(target, move, totalDealt)
+  end
+
+  -- Polished's ROCKY HELMET (per strike that reached the holder, even one
+  -- that fainted it) and then LIFE ORB recoil at the end of the move.  Both
+  -- answer NONE outside Polished.
+  if unsubbedHits > 0 then
+    HeldItems.rockyHelmet(battle, user, target, move, unsubbedHits)
+  end
+  if totalDealt > 0 then
+    HeldItems.lifeOrbRecoil(battle, user)
   end
 
   -- HELD ITEMS, in the order ItemBattleEffects runs them after a hit:

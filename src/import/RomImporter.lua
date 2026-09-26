@@ -997,7 +997,8 @@ end
 -- $0D85CD0 -- black, blue, purple, magenta, RED -- so the markings are composed
 -- as their own mask and wear that colour at run time.
 -- v310: Polished Crystal's q4 type chart and 6-byte ItemAttributes.
-local CACHE_FORMAT = "rom-cache-v311:"
+-- v312: Polished Crystal abilities, natures and move contact flags.
+local CACHE_FORMAT = "rom-cache-v312:"
 -- The completion marker is written under each version's cache prefix
 -- (rom-cache.complete for Red, blue/rom-cache.complete for Blue).
 local MARKER_PATH = "rom-cache.complete"

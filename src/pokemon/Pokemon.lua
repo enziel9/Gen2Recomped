@@ -95,6 +95,28 @@ local function gen3Seed(data, def, rng)
   return seed
 end
 
+-- POLISHED CRYSTAL KEEPS NATURE AND ABILITY IN ONE BYTE OF ITS OWN, not
+-- derived from DVs or a personality word: MON_PERSONALITY (macros/ram.asm,
+-- right after the three DV bytes) is shiny bit 7, ability bits 5-6
+-- (%01 ability 1, %10 ability 2, %11 hidden), nature bits 0-4 (0..24, NAT_*
+-- order).  TryAddMonToParty (engine/pokemon/move_mon.asm) rolls the nature
+-- 0..24 and the ability `Random < 1 + 5 percent` hidden, else odd -> 1,
+-- even -> 2.  Only a Gen 2 cache that extracted abilities or natures (i.e.
+-- Polished) gets a seed; Gold, Silver and Crystal get nil and are unchanged.
+local function polishedSeed(data, def, rng)
+  local order = data.constants and data.constants.natureOrder
+  local abilities = type(def.abilities) == "table" and def.abilities or nil
+  if not (order or abilities) then return nil end
+  rng = rng or love.math.random
+  local seed = {}
+  if order then seed.nature = order[rng(0, #order - 1) + 1] end
+  if abilities then
+    local roll = rng(0, 255)
+    seed.abilitySlot = roll < 13 and 3 or (roll % 2 == 1 and 1 or 2)
+  end
+  return seed
+end
+
 -- ONE INDIVIDUAL, MET AGAIN.
 --
 -- A Gen 3 roamer is not re-rolled every time you corner it: the cartridge
@@ -141,9 +163,10 @@ function Pokemon.new(data, species, level, rng)
   assert(def, "unknown species " .. tostring(species))
   local dvs = Stats.randomDVs(rng)
   local seed = Stats.isGen3(def) and gen3Seed(data, def, rng) or nil
+  local pseed = not seed and polishedSeed(data, def, rng) or nil
   local stats = seed
     and Stats.calc(def, level, seed.ivs, seed.evs, seed.nature)
-    or Stats.calc(def, level, dvs)
+    or Stats.calc(def, level, dvs, nil, nil, pseed and pseed.nature)
   local moves = {}
   for _, id in ipairs(Pokemon.movesAtLevel(def, level)) do
     local mdef = data.moves[id]
@@ -159,8 +182,8 @@ function Pokemon.new(data, species, level, rng)
     personality = seed and seed.personality or nil,
     ivs = seed and seed.ivs or nil,
     evs = seed and seed.evs or nil,
-    nature = seed and seed.nature or nil,
-    abilitySlot = seed and seed.abilitySlot or nil,
+    nature = (seed or pseed or {}).nature,
+    abilitySlot = (seed or pseed or {}).abilitySlot,
     -- THE FIVE NUMBERS THAT HAVE NOTHING TO DO WITH FIGHTING.  Gen 3 stores
     -- them in the same save substruct as the EVs, six bytes right behind
     -- them, and this port read them off a cartridge save and then had
@@ -252,7 +275,8 @@ function Pokemon.forceShiny(data, mon, rng, otId)
   local def = data and data.pokemon and data.pokemon[mon.species]
   if def then
     local full = mon.stats and mon.stats.hp
-    mon.stats = Stats.calc(def, mon.level or 1, dvs, mon.statExp)
+    mon.stats = Stats.calc(def, mon.level or 1, dvs, mon.statExp, nil,
+                           mon.nature)
     -- the mon is being built for a battle, so it comes in at full health
     -- unless it was already damaged (nothing in the ROM path does that)
     mon.hp = (full and mon.hp and mon.hp < full) and math.min(mon.hp, mon.stats.hp)

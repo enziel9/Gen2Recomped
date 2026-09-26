@@ -50,6 +50,8 @@ local function effectiveSpeed(battler, battle)
   if sn ~= 1 or sd ~= 1 then
     spd = math.max(1, math.floor(spd * sn / sd))
   end
+  -- Polished's Choice Scarf, after the abilities as in its GetSpeed
+  spd = HeldItems.modifySpeed(battle and battle.data, battler, spd)
   return spd
 end
 

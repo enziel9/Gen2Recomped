@@ -1223,6 +1223,22 @@ local function buildTrainerParty(game, oppClass, partyIndex, partyDef)
     mon.dvs = dvs
     if slot.statExp then mon.statExp = slot.statExp end
     if slot.happiness then mon.happiness = slot.happiness end
+    -- Polished's TRAINERTYPE_PERSONALITY (data/trainers/macros.asm
+    -- `tr_extra`) explicitly sets nature/ability/shiny on ~5.5% of trainer
+    -- mons (147/2696) -- everyone else keeps whatever Pokemon.new already
+    -- rolled above, which is the cartridge's own random default and not
+    -- something to override. RomExtractorGen2's gen2PolishedTrainerParties
+    -- decodes the Personality byte into slot.nature/.abilitySlot/.shiny
+    -- when the bit is set; nil on Crystal and on the other 94.5%.
+    if slot.nature ~= nil then
+      -- slot.nature is the raw ROM index (0-24); mon.nature is the name
+      -- string Stats.calc/Pokemon.new both expect (Pokemon.applySeed uses
+      -- the same natureOrder lookup for the personality-derived case).
+      local order = game.data.constants and game.data.constants.natureOrder
+      mon.nature = order and (order[slot.nature + 1] or order[1]) or mon.nature
+    end
+    if slot.abilitySlot then mon.abilitySlot = slot.abilitySlot end
+    if slot.shiny then mon.shiny = true end
     if slot.stats then
       -- a stored stat block wins outright: the Battle Tower's opponents carry
       -- the party_struct the cartridge ships, and recomputing it would move
@@ -1232,7 +1248,8 @@ local function buildTrainerParty(game, oppClass, partyIndex, partyDef)
       mon.stats = stats
     else
       mon.stats = require("src.pokemon.Stats").calc(
-        game.data.pokemon[slot.species], slot.level, dvs, slot.statExp)
+        game.data.pokemon[slot.species], slot.level, dvs, slot.statExp,
+        nil, mon.nature)
     end
     mon.hp = mon.stats.hp
     table.insert(out, mon)
@@ -3422,8 +3439,14 @@ end
 function BattleState:playerHasPP(who)
   who = who or self:menuBattler()
   if not (who and who.curMoves) then return false end
+  local moveDefs = self.data and self.data.moves or {}
   for i, mv in ipairs(who.curMoves) do
-    if mv.pp > 0 and who.disabledSlot ~= i then return true end
+    -- an Assault Vest over an all-status moveset leaves Struggle, not a menu
+    -- where every pick is refused
+    if mv.pp > 0 and who.disabledSlot ~= i
+       and not HeldItems.selectionBlock(self.data, who, moveDefs[mv.id]) then
+      return true
+    end
   end
   return false
 end
@@ -3798,6 +3821,12 @@ function BattleState:update(dt)
       elseif self:tormentBlocks(chooser, mvDef) then
         self:say(Strings("%s can't use the\nsame move twice in\na row due to the\nTORMENT!",
                          chooser.name))
+        self.phase = "messages"
+        self.afterQueue = "menu"
+      -- Polished's Choice lock and Assault Vest refuse at selection too
+      -- (core.asm .CheckChoiceItem / .CheckAssaultVest)
+      elseif HeldItems.selectionBlock(self.data, chooser, mvDef) then
+        self:say(HeldItems.selectionBlock(self.data, chooser, mvDef))
         self.phase = "messages"
         self.afterQueue = "menu"
       elseif mv.pp <= 0 then

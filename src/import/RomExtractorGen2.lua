@@ -2737,6 +2737,23 @@ function RomExtractorGen2:extractMoves()
   -- Growl, transformed into Cyndaquil" bug -- and misfired most status moves.
   local effectMap = self:layout("polishedMoveEffects", 0) ~= 0
     and self.manifest and self.manifest.moveEffects or nil
+  -- CONTACT, which Abilities.onContact needs or every move would trip a
+  -- STATIC.  Polished has no flag byte: _CheckContactMove (engine/battle/
+  -- misc.asm) treats a PHYSICAL move as contact and flips the rule for the
+  -- move ids in AbnormalContactMoves ($FF-terminated), so a listed special
+  -- move touches and a listed physical one does not; status never does.
+  local abnormalContact
+  local contactSym = categoryAt > 0 and self:symbol("AbnormalContactMoves")
+  if contactSym then
+    abnormalContact = {}
+    pcall(function()
+      for i = 0, 63 do
+        local b = self.rom:byte(contactSym.bank, contactSym.address + i)
+        if b == 0xFF then break end
+        abnormalContact[b] = true
+      end
+    end)
+  end
   local out, ids = {}, {}
   for index = 1, #order do
     local ok, row = pcall(function()
@@ -2812,6 +2829,10 @@ function RomExtractorGen2:extractMoves()
     local tripleKick = self:layout("moveEffectTripleKick",
                                    GEN2_EFFECT_TRIPLE_KICK)
     if tripleKick > 0 and row[2] == tripleKick then move.multiHit = 3 end
+    if abnormalContact and category then
+      move.makesContact = category
+        == (abnormalContact[index] and "special" or "physical")
+    end
     out[id] = move
     self:tick("Gen2 moves", index, #order)
   end
@@ -3283,7 +3304,25 @@ function RomExtractorGen2:gen2PolishedTrainerParties(bank, startAddress, endAddr
         at = at + 1
       end
       if math.floor(kind / 16) % 2 == 1 then         -- bit 4: personality
+        -- `ability | extra` (data/trainers/macros.asm end_trainer, db at
+        -- TRAINERTYPE_PERSONALITY): bit 7 shiny (SHINY_MASK), bits 5-6
+        -- ability slot (ABILITY_1=$20/ABILITY_2=$40/HIDDEN=$60,
+        -- ABILITY_MASK), bits 0-4 nature 0-24 (NATURE_MASK) -- same
+        -- encoding gen2AbilitiesAndNatures already decodes for wild/party
+        -- mons off the Personality byte, so slot.nature/.abilitySlot line
+        -- up with what Pokemon.new expects without a second table. Present
+        -- on ~5.5% of Polished trainer mons (147/2696 `tr_mon` rows use
+        -- `tr_extra`); every other mon keeps rolling random nature/ability
+        -- in Pokemon.new, which is the cartridge's own default -- NOT a
+        -- bug to "fix" by forcing a neutral nature everywhere.
+        local personality = self.rom:byte(bank, at)
         at = at + 1
+        local abilityBits = math.floor(personality / 32) % 4
+        slot.abilitySlot = abilityBits == 1 and 1
+                            or abilityBits == 2 and 2
+                            or abilityBits == 3 and 3 or nil
+        slot.nature = personality % 32
+        if personality >= 128 then slot.shiny = true end
       end
       if math.floor(kind / 32) % 2 == 1 then         -- bit 5: nickname
         local nick = {}
@@ -4038,9 +4077,94 @@ function RomExtractorGen2:gen2MonPicSize(index)
   return side
 end
 
+-- POLISHED CRYSTAL'S ABILITIES AND NATURES, in the shape the Gen 3 path
+-- already writes (constants.abilities/abilityOrder, constants.natures/
+-- natureOrder), so Abilities.lua and Stats.lua read them unchanged.
+--
+-- AbilityNames is a `dw` pointer table into its own bank, raw-charmap
+-- strings ending $53; the first string starts right after the table, which
+-- is what sizes it (155 on v3.2.3).  NatureNames is one relative-offset
+-- byte per nature (`dr`, like TypeNames), 25 of them in NAT_* order.  The
+-- nature's effect is not a table on this cartridge: GetNatureStatMultiplier
+-- (engine/pokemon/mon_stats.asm) raises stat n/5 and lowers stat n%5 over
+-- Atk, Def, Spe, SAtk, SDef, x11/10 and x9/10, never HP.
+--
+-- Two Polished spellings are respelled onto the Emerald slugs Abilities.lua
+-- keys on ("Compound Eyes" -> COMPOUNDEYES); every other shared ability
+-- already slugs identically.
+RomExtractorGen2.ABILITY_ID_ALIASES = {
+  COMPOUND_EYES = "COMPOUNDEYES", LIGHTNING_ROD = "LIGHTNINGROD",
+}
+RomExtractorGen2.NATURE_STATS = { "attack", "defense", "speed", "spatk", "spdef" }
+
+function RomExtractorGen2:gen2AbilitiesAndNatures(constants)
+  if not self.rom or self:layout("baseAbilitiesAt", 0) <= 0 then return false end
+  local charmap = self:readSourceTable("charmap")
+  local function label(text)
+    local s = tostring(text or ""):upper():gsub("[^%u%d]+", "_")
+    return (s:gsub("^_+", ""):gsub("_+$", ""))
+  end
+  local wrote = false
+  local sym = self:symbol("AbilityNames")
+  if sym then
+    local abilities, order, taken = {}, {}, {}
+    local first = self.rom:word(sym.bank, sym.address)
+    local count = math.floor((first - sym.address) / 2)
+    if count < 1 or count > 256 then count = 0 end
+    for i = 0, count - 1 do
+      local text
+      pcall(function()
+        local ptr = self.rom:word(sym.bank, sym.address + i * 2)
+        text = self:gen2GlyphBytes(self.rom:bytes(sym.bank, ptr, 20), charmap)
+      end)
+      local id = i == 0 and "NO_ABILITY" or label(text)
+      id = RomExtractorGen2.ABILITY_ID_ALIASES[id] or id
+      if id == "" or taken[id] then id = string.format("ABILITY_%03d", i) end
+      taken[id] = true
+      order[i + 1] = id
+      abilities[id] = { id = id, index = i, name = text or id }
+    end
+    if count > 0 then
+      constants.abilities, constants.abilityOrder = abilities, order
+      wrote = true
+    end
+  end
+  sym = self:symbol("NatureNames")
+  if sym then
+    local stats = RomExtractorGen2.NATURE_STATS
+    local natures, order = {}, {}
+    for n = 0, 24 do
+      local text
+      pcall(function()
+        local off = self.rom:byte(sym.bank, sym.address + n)
+        text = self:gen2GlyphBytes(
+          self.rom:bytes(sym.bank, sym.address + n + off, 12), charmap)
+      end)
+      local id = label(text)
+      if id == "" or natures[id] then id = string.format("NATURE_%02d", n) end
+      local up, down = stats[math.floor(n / 5) + 1], stats[n % 5 + 1]
+      local record = { id = id, index = n, name = text or id, modifiers = {} }
+      for _, stat in ipairs(stats) do record.modifiers[stat] = 100 end
+      if up ~= down then
+        record.raises, record.lowers = up, down
+        record.modifiers[up], record.modifiers[down] = 110, 90
+      end
+      natures[id] = record
+      order[n + 1] = id
+    end
+    constants.natures, constants.natureOrder = natures, order
+    constants.natureStatOrder = stats
+    wrote = true
+  end
+  return wrote
+end
+
 function RomExtractorGen2:extractPokemon()
   self:beginStage("Gen2 Pokemon")
   local constants = self:constants()
+  local constantsGrew = self:gen2AbilitiesAndNatures(constants)
+  local abilitiesAt = self:layout("baseAbilitiesAt", 0)
+  local abilityIndex = abilitiesAt > 0 and constants.abilityOrder or nil
   local speciesOrder = constants.speciesOrder or {}
   local fallbackMove = constants.moveOrder and constants.moveOrder[1] or "TACKLE"
 
@@ -4108,6 +4232,9 @@ function RomExtractorGen2:extractPokemon()
     local tmhm = {}
     -- breeding: no Gen1 counterpart, so these stay nil on a Red/Blue import
     local genderRatio, eggCycles, eggGroups
+    -- ability1/ability2/hidden, indexed by the personality byte's bits 5-6;
+    -- nil on every cartridge without them
+    local abilities
 
     if baseSym and self.rom then
       local ok, entry = pcall(function()
@@ -4142,6 +4269,16 @@ function RomExtractorGen2:extractPokemon()
         else
           genderRatio = entry[genderAt]
           eggCycles = entry[RomExtractorGen2.GEN2_BASE_EGG_CYCLES]
+        end
+        if abilityIndex then
+          -- a 0 byte is NO_ABILITY; left as a hole so Abilities.of falls
+          -- back to slot 1 rather than naming a fake ability
+          abilities = {}
+          for slot = 1, 3 do
+            local b = entry[abilitiesAt + slot - 1] or 0
+            if b > 0 then abilities[slot] = abilityIndex[b + 1] end
+          end
+          if not abilities[1] then abilities = nil end
         end
         local groups = entry[eggGroupsAt] or 0
         local names = RomExtractorGen2.GEN2_EGG_GROUPS
@@ -4312,6 +4449,7 @@ function RomExtractorGen2:extractPokemon()
       -- the real groups and gender split, and Gen2Commands' giveegg needs
       -- the species' own hatch counter instead of a flat five cycles
       genderRatio = genderRatio, eggCycles = eggCycles, eggGroups = eggGroups,
+      abilities = abilities,
       level1Moves = level1Moves, learnset = learn.learnset or {},
       evolutions = learn.evolutions or {},
       spriteFront = spriteFront, spriteBack = spriteBack,
@@ -4337,6 +4475,7 @@ function RomExtractorGen2:extractPokemon()
     Logger.info("Gen2 Pokemon: %d pic animations", animated)
   end
   self:gen2DexEntries(out)
+  if constantsGrew then self:write("constants", constants) end
   self:write("pokemon", out)
   self:tick("Gen2 Pokemon", 1, 1)
 end

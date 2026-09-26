@@ -53,7 +53,21 @@ HeldItems.EFFECT = {
   AMULET_COIN = 76,
   BRIGHTPOWDER = 77,
   FOCUS_BAND = 79,
+  -- Not Crystal constants: Polished-only effects, reached only through
+  -- translatePolished.  Numbered well clear of Crystal's HELD_* range.
+  EVIOLITE = 200,
+  CATEGORY_BOOST = 201,
+  CHOICE = 202,
+  ASSAULT_VEST = 203,
+  FOCUS_SASH = 204,
+  LIFE_ORB = 205,
+  ROCKY_HELMET = 206,
 }
+
+-- HELD_CHOICE's param is the boosted stat (constants/battle_constants.asm);
+-- HELD_CATEGORY_BOOST's is the move category (type_constants.asm).
+HeldItems.CHOICE_STAT = { ATTACK = 0, SPEED = 2, SP_ATTACK = 3 }
+HeldItems.CATEGORY = { PHYSICAL = 0, SPECIAL = 1 }
 
 local TYPE_BY_EFFECT = {
   [50] = "NORMAL", [51] = "FIGHTING", [52] = "FLYING",
@@ -67,13 +81,23 @@ local TYPE_BY_EFFECT = {
 -- is 2 there, 3 in Crystal; HELD_LIFE_ORB 50 lands on Crystal's
 -- HELD_NORMAL_BOOST) and changed what several params mean, so its raw
 -- ItemAttributes bytes are translated onto the Crystal numbering the rest of
--- this file speaks.  Polished-only effects (Life Orb, Choice, Assault Vest...)
--- are left unmapped and therefore do nothing rather than the wrong thing.
+-- this file speaks.  Polished-only effects implemented here (Eviolite,
+-- Muscle Band/Wise Glasses, Choice, Assault Vest, Focus Sash, Life Orb, Rocky
+-- Helmet) get their own EFFECT ids above.  Everything else stays unmapped and
+-- does nothing rather than the wrong thing; notably the pinch berries
+-- (HELD_RAISE_STAT/RAISE_CRIT fire at 1/4 HP after ANY damage, which needs a
+-- hook on every HP loss, not just the direct-hit seam), Weakness Policy and
+-- Air Balloon (need hit-effectiveness and Ground-immunity hooks that do not
+-- exist yet) and the EV items (Power*/Macho Brace touch stat-exp gain, not
+-- battle).
 local POLISHED = {
   BERRY = 1, LEFTOVERS = 2, RESTORE_PP = 3, CLEANSE_TAG = 4,
-  HEAL_STATUS = 5, HEAL_CONFUSE = 6, METAL_POWDER = 13, TYPE_BOOST = 16,
+  HEAL_STATUS = 5, HEAL_CONFUSE = 6, METAL_POWDER = 13, EVIOLITE = 15,
+  TYPE_BOOST = 16, CATEGORY_BOOST = 17,
   ESCAPE = 19, CRITICAL_UP = 20, FLINCH_UP = 21, QUICK_CLAW = 22,
   AMULET_COIN = 23, BRIGHTPOWDER = 24, FOCUS_BAND = 25,
+  CHOICE = 33, ASSAULT_VEST = 43, FOCUS_SASH = 48, LIFE_ORB = 50,
+  ROCKY_HELMET = 54,
 }
 
 local POLISHED_DIRECT = {
@@ -87,6 +111,13 @@ local POLISHED_DIRECT = {
   [POLISHED.CRITICAL_UP] = HeldItems.EFFECT.CRITICAL_UP,
   [POLISHED.AMULET_COIN] = HeldItems.EFFECT.AMULET_COIN,
   [POLISHED.FOCUS_BAND] = HeldItems.EFFECT.FOCUS_BAND,
+  [POLISHED.EVIOLITE] = HeldItems.EFFECT.EVIOLITE,
+  [POLISHED.CATEGORY_BOOST] = HeldItems.EFFECT.CATEGORY_BOOST,
+  [POLISHED.CHOICE] = HeldItems.EFFECT.CHOICE,
+  [POLISHED.ASSAULT_VEST] = HeldItems.EFFECT.ASSAULT_VEST,
+  [POLISHED.FOCUS_SASH] = HeldItems.EFFECT.FOCUS_SASH,
+  [POLISHED.LIFE_ORB] = HeldItems.EFFECT.LIFE_ORB,
+  [POLISHED.ROCKY_HELMET] = HeldItems.EFFECT.ROCKY_HELMET,
 }
 
 -- HELD_HEAL_STATUS carries a status bitmask as its param (PSN bit 3, BRN 4,
@@ -293,11 +324,39 @@ function HeldItems.modifyBattleStats(data, attacker, defender, atkStat, defStat,
   -- copied species.  Metal Powder only works before Transform.
   local untransformedDitto = dSpecies == "DITTO"
     and (defender.species == nil or norm(defender.species) == "DITTO")
-  if dEffect == HeldItems.EFFECT.METAL_POWDER and untransformedDitto
-     and (defStat == "defense" or defStat == "spdef" or defStat == "special") then
+  local anyDef = defStat == "defense" or defStat == "spdef" or defStat == "special"
+  local spDef = defStat == "spdef" or defStat == "special"
+  if dEffect == HeldItems.EFFECT.METAL_POWDER and untransformedDitto and anyDef then
+    dfn = math.floor(dfn * 3 / 2)
+  end
+
+  -- Polished's Choice Band/Specs (ApplyPhysical/SpecialAttackDamageMod x1.5),
+  -- Assault Vest (Sp.Def damage mod 2/3, i.e. Sp.Def x1.5) and Eviolite
+  -- (SetDefenseBoost x1.5 on both defences while the species can still
+  -- evolve).  Only reachable through translatePolished.
+  local aEffect, aParam = HeldItems.effect(data, attacker)
+  if aEffect == HeldItems.EFFECT.CHOICE then
+    if (aParam == HeldItems.CHOICE_STAT.ATTACK and atkStat == "attack")
+       or (aParam == HeldItems.CHOICE_STAT.SP_ATTACK
+           and (atkStat == "spatk" or atkStat == "special")) then
+      atk = math.floor(atk * 3 / 2)
+    end
+  end
+  if dEffect == HeldItems.EFFECT.ASSAULT_VEST and spDef then
+    dfn = math.floor(dfn * 3 / 2)
+  elseif dEffect == HeldItems.EFFECT.EVIOLITE and anyDef
+     and HeldItems.canEvolve(data, defender) then
     dfn = math.floor(dfn * 3 / 2)
   end
   return atk, dfn
+end
+
+-- Eviolite's gate: the holder's own (party) species has an evolution entry,
+-- the same EvosAttacks test Polished makes.
+function HeldItems.canEvolve(data, holder)
+  local mon = monOf(holder)
+  local def = mon and data and data.pokemon and data.pokemon[mon.species]
+  return def ~= nil and type(def.evolutions) == "table" and #def.evolutions > 0
 end
 
 function HeldItems.applyTypeBoost(data, attacker, moveType, damage)
@@ -308,15 +367,157 @@ function HeldItems.applyTypeBoost(data, attacker, moveType, damage)
   return math.max(1, math.floor(damage * (100 + param) / 100))
 end
 
+-- Polished's other attacker damage items, from the same BattleCommand_DamageCalc
+-- switch as the type boost (an item is only ever one of them): Life Orb x1.3,
+-- Muscle Band / Wise Glasses x1.1 for a matching physical / special move.
+function HeldItems.applyDamageBoost(data, attacker, special, damage)
+  local effect, param = HeldItems.effect(data, attacker)
+  if effect == HeldItems.EFFECT.LIFE_ORB then
+    return math.max(1, math.floor(damage * 13 / 10))
+  elseif effect == HeldItems.EFFECT.CATEGORY_BOOST then
+    local want = special and HeldItems.CATEGORY.SPECIAL or HeldItems.CATEGORY.PHYSICAL
+    if param == want then return math.max(1, math.floor(damage * 11 / 10)) end
+  end
+  return damage
+end
+
+-- Choice Scarf: x1.5 after paralysis and the speed abilities, as in
+-- Polished's GetSpeed.
+function HeldItems.modifySpeed(data, holder, speed)
+  local effect, param = HeldItems.effect(data, holder)
+  if effect == HeldItems.EFFECT.CHOICE and param == HeldItems.CHOICE_STAT.SPEED then
+    return math.max(1, math.floor(speed * 3 / 2))
+  end
+  return speed
+end
+
+-- Second return value names the item that saved the holder, when one did, so
+-- the caller can print it after the HP bar moves.  Focus Band stays silent to
+-- keep the existing Crystal behaviour byte-for-byte.
 function HeldItems.limitDirectDamage(data, target, damage, rng)
   if not isAlive(target) or damage <= 0 then return damage end
   local effect, param = HeldItems.effect(data, target)
-  if effect ~= HeldItems.EFFECT.FOCUS_BAND then return damage end
-  local hp = tonumber(monOf(target).hp) or 0
+  local mon = monOf(target)
+  local hp = tonumber(mon.hp) or 0
   if hp <= 1 or damage < hp then return damage end
+  -- Focus Sash: a certainty from FULL HP (CheckOpponentFullHP), consumed on
+  -- use; Focus Band is a flat roll at any HP and is kept.
+  if effect == HeldItems.EFFECT.FOCUS_SASH then
+    local maxHP = mon.stats and tonumber(mon.stats.hp)
+    if maxHP and hp >= maxHP then
+      consume(target)
+      return hp - 1, "FOCUS_SASH"
+    end
+    return damage
+  end
+  if effect ~= HeldItems.EFFECT.FOCUS_BAND then return damage end
   rng = rng or love.math.random
   if rng(0, 255) < param then return hp - 1 end
   return damage
+end
+
+local function itemName(data, id)
+  local def = id and data and data.items and data.items[id]
+  return (type(def) == "table" and def.name) or tostring(id or "ITEM"):gsub("_", " ")
+end
+HeldItems.itemName = itemName
+
+local function hasMagicGuard(holder)
+  local ok, Abilities = pcall(require, "src.battle.Abilities")
+  return ok and Abilities.of(holder) == "MAGIC_GUARD"
+end
+
+-- Item recoil bypasses a Substitute (it is the user's own HP), so it is taken
+-- here rather than through BattleState:applyDamage.
+local function loseHP(battle, holder, amount)
+  local mon = monOf(holder)
+  local dealt = math.min(amount, mon.hp)
+  mon.hp = mon.hp - dealt
+  if dealt > 0 and battle.drainNext then battle:drainNext(holder, mon.hp) end
+  return dealt
+end
+
+-- Rocky Helmet: 1/6 of the ATTACKER's max HP per landed contact hit, even if
+-- the holder fainted from it (Polished checks only that the attacker is still
+-- up).  Contact comes from move.makesContact, which RomExtractorGen2 now
+-- writes for Polished (physical/special category vs. AbnormalContactMoves,
+-- see extractMoves ~2821-2835) -- Crystal/Gold/Silver still leave it nil,
+-- so the fallback below ("physical moves make contact") still carries them.
+function HeldItems.makesContact(move)
+  if move.makesContact ~= nil then return move.makesContact == true end
+  local category = move.category
+  if category == nil then
+    category = require("src.battle.TypeChart").category(move.type)
+  end
+  return category ~= "special" -- Damage's categoryOf also defaults to physical
+end
+
+function HeldItems.rockyHelmet(battle, user, target, move, hits)
+  if not (battle and user and target and move) then return end
+  if HeldItems.effect(battle.data, target) ~= HeldItems.EFFECT.ROCKY_HELMET then return end
+  if not HeldItems.makesContact(move) or hasMagicGuard(user) then return end
+  local maxHP = monOf(user).stats and tonumber(monOf(user).stats.hp)
+  if not maxHP then return end
+  local name = itemName(battle.data, monOf(target).item or monOf(target).heldItem)
+  for _ = 1, math.max(1, hits or 1) do
+    if not isAlive(user) then break end
+    battle:sayNext(Strings("%s\nwas hurt by\n%s!", displayName(user), name))
+    loseHP(battle, user, math.max(1, math.floor(maxHP / 6)))
+  end
+end
+
+-- Life Orb: 1/10 max HP after a move that dealt damage (EndMoveUserItems).
+function HeldItems.lifeOrbRecoil(battle, user)
+  if not (battle and isAlive(user)) then return end
+  if HeldItems.effect(battle.data, user) ~= HeldItems.EFFECT.LIFE_ORB then return end
+  if hasMagicGuard(user) then return end
+  local maxHP = monOf(user).stats and tonumber(monOf(user).stats.hp)
+  if not maxHP then return end
+  battle:sayNext(Strings("%s\nlost some of its\nHP!", displayName(user)))
+  loseHP(battle, user, math.max(1, math.floor(maxHP / 10)))
+end
+
+-- -------------------------------------------------------------------------
+-- Move selection: Choice lock and Assault Vest
+-- -------------------------------------------------------------------------
+
+local function isStatusMove(move)
+  return move.category == "status" or (tonumber(move.power) or 0) == 0
+end
+
+-- The move a Choice holder is locked into, or nil.  Polished keeps the lock in
+-- the Encore variable; here it is derived from battler.lastMove, which
+-- makeBattler builds fresh on every switch-in, so switching out clears it
+-- without a dedicated hook.  The lock only holds while that move is still in
+-- the moveset with PP left: a called move (Metronome's pick) or an exhausted
+-- one frees the holder instead of leaving it with nothing selectable.
+function HeldItems.choiceLockedMove(data, battler)
+  if not (battler and battler.lastMove) then return nil end
+  if HeldItems.effect(data, battler) ~= HeldItems.EFFECT.CHOICE then return nil end
+  local mon = monOf(battler)
+  for _, m in ipairs(battler.curMoves or (mon and mon.moves) or {}) do
+    if m.id == battler.lastMove and (tonumber(m.pp) or 0) > 0 then return m.id end
+  end
+  return nil
+end
+
+-- nil when the move may be chosen, else the refusal text.
+function HeldItems.selectionBlock(data, battler, move)
+  if not (battler and move) then return nil end
+  local effect = HeldItems.effect(data, battler)
+  local mon = monOf(battler)
+  local id = mon and (mon.item or mon.heldItem)
+  if effect == HeldItems.EFFECT.ASSAULT_VEST and isStatusMove(move) then
+    return Strings("The %s\nprevents usage\nof status moves!", itemName(data, id))
+  elseif effect == HeldItems.EFFECT.CHOICE then
+    local locked = HeldItems.choiceLockedMove(data, battler)
+    if locked and locked ~= move.id then
+      local lockedDef = data and data.moves and data.moves[locked]
+      return Strings("The %s\nonly allows use\nof %s!", itemName(data, id),
+                     lockedDef and lockedDef.name or locked)
+    end
+  end
+  return nil
 end
 
 -- Crystal does not run BattleCommand_KingsRock after every damaging move.

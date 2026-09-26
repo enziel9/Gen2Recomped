@@ -135,6 +135,20 @@ function Stats.calc(speciesDef, level, dvs, statExp, evs, nature)
                         statExp.special, level, false)
     out.special = out.spatk
   end
+  -- Polished Crystal carries a nature on a Gen 2 stat block: CalcPkmnStatC
+  -- (engine/pokemon/mon_stats.asm) multiplies the finished stat by 11/10 or
+  -- 9/10, never HP.  `natures` is only set when the cache has them, so Gold,
+  -- Silver and Crystal never reach this.
+  local mods = nature and natures and natures[nature]
+    and natures[nature].modifiers
+  if mods then
+    for key, mod in pairs(mods) do
+      if out[key] and key ~= "hp" then
+        out[key] = math.floor(out[key] * mod / 100)
+      end
+    end
+    if out.spatk then out.special = out.spatk end
+  end
   return out
 end
 
@@ -167,7 +181,7 @@ function Stats.ensure(speciesDef, mon)
     end
     if base.spatk and base.spdef and not mon.stats.spatk then
       local full = Stats.calc(speciesDef, mon.level or 1, mon.dvs or {},
-                              mon.statExp)
+                              mon.statExp, nil, mon.nature)
       mon.stats.spatk, mon.stats.spdef = full.spatk, full.spdef
     end
     return mon
@@ -176,7 +190,8 @@ function Stats.ensure(speciesDef, mon)
     mon.stats = Stats.calcGen3(speciesDef, mon.level or 1, mon.ivs, mon.evs,
                                mon.nature)
   else
-    mon.stats = Stats.calc(speciesDef, mon.level or 1, mon.dvs or {}, mon.statExp)
+    mon.stats = Stats.calc(speciesDef, mon.level or 1, mon.dvs or {},
+                           mon.statExp, nil, mon.nature)
   end
   mon.hp = math.max(0, math.min(tonumber(mon.hp) or mon.stats.hp, mon.stats.hp))
   return mon

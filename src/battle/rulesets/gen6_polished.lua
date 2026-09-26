@@ -21,17 +21,26 @@ return {
   -- Critical hits do 150% damage, not 200% (FEATURES.md "Critical hits do
   -- 150% damage, not 200%, but are more likely"). Same finished-damage
   -- multiplier path Gen 3 uses (Damage.compute reads ruleset.critMultiplier
-  -- after the formula, not a level-doubling trick).
-  --
-  -- NOT set here: critStages / CRIT_STAGE_DEN. Polished's own crit-chance
-  -- ladder (CriticalHitChances, bank 13/$4000 per the manifest) has not been
-  -- read off the ROM yet -- setting critMultiplier alone still disables
-  -- Gen 2's speed-based ladder (see the `not ruleset.critMultiplier` gate in
-  -- Damage.critRoll), which is correct: Polished's chances are NOT Gen 2's,
-  -- they are just not verified to be Gen 3's shape either. Whoever reads
-  -- CriticalHitChances for real should add critStages/CRIT_STAGE_DEN here
-  -- once confirmed, not guess them now.
+  -- after the formula, not a level-doubling trick). Confirmed in
+  -- engine/battle/effect_commands.asm (damage mod "Critical hits": ln 3,2);
+  -- the SNIPER ability raises it to 9/4 there, which is an ability, not a
+  -- ruleset constant, and is not modelled here.
   critMultiplier = 1.5,
+
+  -- "More likely" in numbers: CriticalHitChances (data/battle/
+  -- critical_hit_chances.asm, ROM 0d:4000, bytes 01 03 0C 18 read off
+  -- polishedcrystal-3.2.3.gbc) is a numerator over 24, rolled by
+  -- BattleCommand_critical (0d:5d94) as BattleRandomRange(24) < n:
+  -- stage 0 = 1/24, 1 = 1/8, 2 = 1/2, 3+ = always (the asm jumps straight to
+  -- .guranteed_crit for c >= 3). That is the Gen 6 ladder, not Gen 3's
+  -- 1/16..1/2, hence a per-ruleset table rather than Damage.lua's default.
+  -- Stage sources match Damage.critRoll's critStages branch as-is: high-crit
+  -- move +1 (CriticalHitMoves), Focus Energy +2, Scope Lens/Razor Claw +1,
+  -- Lucky Punch/Leek on their species +2. Not modelled: SUPER_LUCK +1 and
+  -- BATTLE_ARMOR/SHELL_ARMOR blocking (abilities), and affection level 3
+  -- doubling the numerator (no affection system).
+  critStages = true,
+  critStageDen = { [0] = 24, 8, 2, 1 },
 
   -- Electric-type Pokemon are immune to paralysis outright (not just to
   -- Electric-type moves against Ground, which src/battle/Status.lua already

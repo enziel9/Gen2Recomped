@@ -109,7 +109,10 @@ function Damage.critRoll(ruleset, attacker, moveId, rng, highCrit, data)
     -- SCOPE LENS is +1 for anybody; LUCKY PUNCH and STICK are +2 and are
     -- dead weight on anything that is not a CHANSEY or a FARFETCH'D
     stage = stage + HoldItems.critStages(attacker)
-    local den = CRIT_STAGE_DEN[math.max(0, math.min(4, stage))] or 16
+    -- A ruleset may bring its own ladder (Polished's is 24/8/2/1, four rungs
+    -- instead of Gen 3's five); the top rung absorbs any overflow stage.
+    local denTable = ruleset.critStageDen or CRIT_STAGE_DEN
+    local den = denTable[math.max(0, math.min(#denTable, stage))]
     return rng(1, den) == 1
   end
   local function shl(x) return math.min(255, x * 2) end
@@ -410,6 +413,8 @@ function Damage.compute(ruleset, attacker, defender, move, opts)
   -- for the retail Dragon Fang/Dragon Scale held-effect data bug.
   if not opts.typeless then
     d = HeldItems.applyTypeBoost(opts.data, attacker, move.type, d)
+    -- Polished's Life Orb / Muscle Band / Wise Glasses, same switch, same slot
+    d = HeldItems.applyDamageBoost(opts.data, attacker, special, d)
   end
 
   -- DoWeatherModifiers (engine/battle/misc.asm:52) runs at the head of

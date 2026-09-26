@@ -974,6 +974,10 @@ def main():
     layout["baseGenderPacked"] = 1
     layout["baseGrowthAt"] = 17
     layout["baseEggGroupsAt"] = 18
+    # BASE_ABILITY_1/2/3 (constants/pokemon_data_constants.asm): ability ids
+    # into AbilityNames; the personality byte's bits 5-6 pick one
+    # (GetAbility, home/pokemon.asm).
+    layout["baseAbilitiesAt"] = 14
     layout["baseTmhmAt"] = 21
     layout["baseTmhmBytes"] = 14
     # no `dn width, height` anywhere in the record; PokemonPicSizes carries it

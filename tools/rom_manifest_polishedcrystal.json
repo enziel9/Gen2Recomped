@@ -5192,6 +5192,7 @@
     "audioRowCries": 2,
     "audioRowMusic": 3,
     "audioRowSFX": 2,
+    "baseAbilitiesAt": 14,
     "baseCatchAt": 9,
     "baseDataEntry": 34,
     "baseEggGroupsAt": 18,

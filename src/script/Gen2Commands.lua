@@ -3774,7 +3774,7 @@ function Gen2Commands.dayCareWithdraw(ctx, which)
   mon.exp = exp
   mon.level = newLevel
   if def then
-    mon.stats = Stats.calc(def, mon.level, mon.dvs, mon.statExp)
+    mon.stats = Stats.calc(def, mon.level, mon.dvs, mon.statExp, nil, mon.nature)
     mon.hp = math.min(mon.hp or mon.stats.hp, mon.stats.hp)
     -- WriteMonMoves with wLearningMovesFromDayCare: the levels it grew
     -- through are taught in order, oldest move pushed out first

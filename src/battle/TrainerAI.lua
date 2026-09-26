@@ -334,8 +334,13 @@ function TrainerAI.chooseMove(battler, rng, battle)
   -- depletes enemy PP and falls back to Struggle when none remain.
   local unlimited = battle and battle.ruleset and battle.ruleset.enemyUnlimitedPP
   local usable = {}
+  -- Polished's Choice lock / Assault Vest bind the AI the same as the player
+  local HeldItems = require("src.battle.HeldItems")
+  local data = battle and battle.data
+  local moveDefs = data and data.moves or {}
   for i, mv in ipairs(battler.curMoves) do
-    if battler.disabledSlot ~= i and (unlimited or mv.pp > 0) then
+    if battler.disabledSlot ~= i and (unlimited or mv.pp > 0)
+       and not HeldItems.selectionBlock(data, battler, moveDefs[mv.id]) then
       table.insert(usable, mv)
     end
   end

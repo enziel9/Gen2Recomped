@@ -299,7 +299,7 @@ function Evolution.apply(game, mon, newSpecies, via, evo)
   local fromSpecies = mon.species
   local hpLost = mon.stats.hp - mon.hp
   mon.species = newSpecies
-  mon.stats = Stats.calc(newDef, mon.level, mon.dvs, mon.statExp)
+  mon.stats = Stats.calc(newDef, mon.level, mon.dvs, mon.statExp, nil, mon.nature)
   mon.hp = math.max(1, mon.stats.hp - hpLost)
   if game.save.pokedex then
     game.save.pokedex.seen[newSpecies] = true

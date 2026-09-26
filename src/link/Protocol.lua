@@ -64,6 +64,10 @@ function Protocol.packMon(mon)
     item = mon.item,
     dvs = mon.dvs,
     statExp = mon.statExp,
+    -- Polished Crystal's nature and ability slot (its MON_PERSONALITY bits);
+    -- nil on Gold/Silver/Crystal, and an old peer simply ignores them
+    nature = mon.nature,
+    abilitySlot = mon.abilitySlot,
     moves = moves,
     ot = mon.ot,
     otId = mon.otId,
@@ -108,7 +112,15 @@ function Protocol.unpackMon(data, packed, opts)
   for _, k in ipairs({ "hp", "attack", "defense", "speed", "special" }) do
     statExp[k] = math.max(0, math.min(65535, math.floor((packed.statExp or {})[k] or 0)))
   end
-  local stats = Stats.calc(def, level, dvs, statExp)
+  -- only a nature this install knows, and only a slot the species has
+  local nature = type(packed.nature) == "string"
+    and Stats.natureFor(packed.nature) and packed.nature or nil
+  local abilitySlot = tonumber(packed.abilitySlot)
+  if not (abilitySlot and type(def.abilities) == "table"
+          and def.abilities[abilitySlot]) then
+    abilitySlot = nil
+  end
+  local stats = Stats.calc(def, level, dvs, statExp, nil, nature)
   local moves = {}
   for _, mv in ipairs(packed.moves or {}) do
     local mdef = data.moves[mv.id]
@@ -150,6 +162,8 @@ function Protocol.unpackMon(data, packed, opts)
     exp = math.max(0, math.floor(packed.exp or Growth.expForLevel(def.growthRate, level))),
     dvs = dvs,
     statExp = statExp,
+    nature = nature,
+    abilitySlot = abilitySlot,
     stats = stats,
     hp = hp,
     status = status,

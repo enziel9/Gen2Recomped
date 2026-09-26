@@ -709,7 +709,8 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
     target.level = target.level + 1
     target.exp = Growth.expForLevel(speciesDef.growthRate, target.level)
     local old = target.stats
-    target.stats = Stats.calc(speciesDef, target.level, target.dvs, target.statExp)
+    target.stats = Stats.calc(speciesDef, target.level, target.dvs, target.statExp,
+                              nil, target.nature)
     target.hp = math.min(target.stats.hp, target.hp + (target.stats.hp - old.hp))
     -- PIKAHAPPY_LEVELUP on a candy level (item_effects.asm:1540)
     require("src.world.PikachuFollower")
@@ -756,7 +757,7 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
     target.statExp[vitaminStat] = math.min(65535, cur + 2560)
     local Stats = require("src.pokemon.Stats")
     target.stats = Stats.calc(data.pokemon[target.species], target.level,
-                              target.dvs, target.statExp)
+                              target.dvs, target.statExp, nil, target.nature)
     target.hp = math.min(target.hp, target.stats.hp)
     return "consumed", { Strings("%s's %s\nrose!", monName(data, target),
       vitaminStat == "hp" and "HP" or vitaminStat:upper()) }

@@ -294,8 +294,8 @@ do
   local function holder(key) return { mon = { item = key } } end
   eq(HeldItems.effect(pdata, holder("LEFTOVERS")), HeldItems.EFFECT.LEFTOVERS,
      "Polished HELD_LEFTOVERS (2) is Leftovers")
-  eq(HeldItems.effect(pdata, holder("LIFE_ORB")), HeldItems.EFFECT.NONE,
-     "Polished HELD_LIFE_ORB (50) is not Crystal's Normal boost")
+  eq(HeldItems.effect(pdata, holder("LIFE_ORB")), HeldItems.EFFECT.LIFE_ORB,
+     "Polished HELD_LIFE_ORB (50) is Life Orb, not Crystal's Normal boost")
   eq(HeldItems.effect(pdata, holder("PECHA_BERRY")), HeldItems.EFFECT.HEAL_POISON,
      "Polished status mask 1<<PSN heals poison")
   eq(HeldItems.effect(pdata, holder("LUM_BERRY")), HeldItems.EFFECT.HEAL_STATUS,
@@ -307,6 +307,149 @@ do
      "Polished Fairy boost applies")
   e, p = HeldItems.effect(pdata, holder("QUICK_CLAW"))
   eq(p, 51, "Polished Quick Claw 20% rescaled to /256")
+  GameVersion.set(before)
+end
+
+-- Polished-only hold items (Choice, Assault Vest, Eviolite, Life Orb, Focus
+-- Sash, Rocky Helmet, Muscle Band / Wise Glasses).
+do
+  local GameVersion = require("src.core.GameVersion")
+  local before = GameVersion.get()
+  GameVersion.set("polishedcrystal")
+  local pdata = {
+    items = {
+      CHOICE_BAND = { key = "CHOICE_BAND", name = "CHOICE BAND", heldEffect = 33, heldParam = 0 },
+      CHOICE_SCARF = item("CHOICE_SCARF", 33, 2),
+      CHOICE_SPECS = item("CHOICE_SPECS", 33, 3),
+      ASSAULT_VEST = item("ASSAULT_VEST", 43, 0),
+      EVIOLITE = item("EVIOLITE", 15, 50),
+      LIFE_ORB = item("LIFE_ORB", 50, 0),
+      FOCUS_SASH = item("FOCUS_SASH", 48, 0),
+      ROCKY_HELMET = { key = "ROCKY_HELMET", name = "ROCKY HELMET", heldEffect = 54, heldParam = 0 },
+      MUSCLE_BAND = item("MUSCLE_BAND", 17, 0),
+      WISE_GLASSES = item("WISE_GLASSES", 17, 1),
+      AIR_BALLOON = item("AIR_BALLOON", 42, 0),
+    },
+    pokemon = { PICHU = { evolutions = { { species = "PIKACHU" } } },
+                RAICHU = { evolutions = {} } },
+    moves = { TACKLE = { id = "TACKLE", name = "TACKLE", power = 40 },
+              GROWL = { id = "GROWL", name = "GROWL", power = 0, category = "status" },
+              EMBER = { id = "EMBER", name = "EMBER", power = 40, category = "special" } },
+  }
+
+  local atk, def = HeldItems.modifyBattleStats(pdata, battler("EEVEE", "CHOICE_BAND"),
+                                              battler("EEVEE"), "attack", "defense", 100, 100)
+  eq(atk, 150, "Choice Band x1.5 physical Attack")
+  atk = HeldItems.modifyBattleStats(pdata, battler("EEVEE", "CHOICE_BAND"),
+                                    battler("EEVEE"), "spatk", "spdef", 100, 100)
+  eq(atk, 100, "Choice Band leaves Sp. Atk alone")
+  atk = HeldItems.modifyBattleStats(pdata, battler("EEVEE", "CHOICE_SPECS"),
+                                    battler("EEVEE"), "spatk", "spdef", 100, 100)
+  eq(atk, 150, "Choice Specs x1.5 Sp. Atk")
+  atk = HeldItems.modifyBattleStats(pdata, battler("EEVEE", "CHOICE_SCARF"),
+                                    battler("EEVEE"), "attack", "defense", 100, 100)
+  eq(atk, 100, "Choice Scarf does not boost Attack")
+  _, def = HeldItems.modifyBattleStats(pdata, battler("EEVEE"), battler("EEVEE", "ASSAULT_VEST"),
+                                       "spatk", "spdef", 100, 100)
+  eq(def, 150, "Assault Vest x1.5 Sp. Def")
+  _, def = HeldItems.modifyBattleStats(pdata, battler("EEVEE"), battler("EEVEE", "ASSAULT_VEST"),
+                                       "attack", "defense", 100, 100)
+  eq(def, 100, "Assault Vest leaves Defense alone")
+  _, def = HeldItems.modifyBattleStats(pdata, battler("EEVEE"), battler("PICHU", "EVIOLITE"),
+                                       "attack", "defense", 100, 100)
+  eq(def, 150, "Eviolite x1.5 Defense on a species that can evolve")
+  _, def = HeldItems.modifyBattleStats(pdata, battler("EEVEE"), battler("PICHU", "EVIOLITE"),
+                                       "spatk", "spdef", 100, 100)
+  eq(def, 150, "Eviolite x1.5 Sp. Def on a species that can evolve")
+  _, def = HeldItems.modifyBattleStats(pdata, battler("EEVEE"), battler("RAICHU", "EVIOLITE"),
+                                       "attack", "defense", 100, 100)
+  eq(def, 100, "Eviolite does nothing on a fully evolved species")
+
+  local scarf = battler("EEVEE", "CHOICE_SCARF", 100)
+  scarf.mon.status = nil
+  eq(TurnOrder.effectiveSpeed(scarf, { data = pdata }), 150, "Choice Scarf x1.5 Speed")
+  eq(TurnOrder.effectiveSpeed(battler("EEVEE", "CHOICE_BAND", 100), { data = pdata }), 100,
+     "Choice Band leaves Speed alone")
+
+  eq(HeldItems.applyDamageBoost(pdata, battler("EEVEE", "LIFE_ORB"), false, 100), 130,
+     "Life Orb x1.3 damage")
+  eq(HeldItems.applyDamageBoost(pdata, battler("EEVEE", "MUSCLE_BAND"), false, 100), 110,
+     "Muscle Band x1.1 physical damage")
+  eq(HeldItems.applyDamageBoost(pdata, battler("EEVEE", "MUSCLE_BAND"), true, 100), 100,
+     "Muscle Band ignores special moves")
+  eq(HeldItems.applyDamageBoost(pdata, battler("EEVEE", "WISE_GLASSES"), true, 100), 110,
+     "Wise Glasses x1.1 special damage")
+  eq(HeldItems.effect(pdata, battler("EEVEE", "AIR_BALLOON")), HeldItems.EFFECT.NONE,
+     "Air Balloon stays unimplemented (NONE)")
+
+  -- Focus Sash: certain from full HP, consumed; nothing below full HP
+  local sash = battler("EEVEE", "FOCUS_SASH", 50, 100, 100)
+  local dmg, why = HeldItems.limitDirectDamage(pdata, sash, 250)
+  eq(dmg, 99, "Focus Sash leaves a full-HP holder at 1 HP")
+  eq(why, "FOCUS_SASH", "Focus Sash reports itself")
+  eq(sash.mon.item, nil, "Focus Sash is consumed")
+  sash = battler("EEVEE", "FOCUS_SASH", 50, 99, 100)
+  eq(HeldItems.limitDirectDamage(pdata, sash, 250), 250, "Focus Sash fails below full HP")
+
+  local function fakeBattle()
+    local b = { data = pdata, said = {} }
+    function b:sayNext(t) table.insert(self.said, t) end
+    function b:drainNext() end
+    return b
+  end
+  -- Life Orb recoil: 1/10 max HP
+  local fb = fakeBattle()
+  local orb = battler("EEVEE", "LIFE_ORB", 50, 100, 100)
+  HeldItems.lifeOrbRecoil(fb, orb)
+  eq(orb.mon.hp, 90, "Life Orb recoil costs 1/10 max HP")
+  eq(#fb.said, 1, "Life Orb recoil prints one message")
+
+  -- Rocky Helmet: 1/6 attacker max HP per contact hit; special moves without a
+  -- contact flag are assumed non-contact, an explicit flag wins
+  fb = fakeBattle()
+  local attacker = battler("EEVEE", nil, 50, 120, 120)
+  local helmet = battler("RHYHORN", "ROCKY_HELMET")
+  HeldItems.rockyHelmet(fb, attacker, helmet, pdata.moves.TACKLE, 1)
+  eq(attacker.mon.hp, 100, "Rocky Helmet deals 1/6 attacker max HP on contact")
+  HeldItems.rockyHelmet(fb, attacker, helmet, pdata.moves.EMBER, 1)
+  eq(attacker.mon.hp, 100, "Rocky Helmet ignores special moves without a contact flag")
+  HeldItems.rockyHelmet(fb, attacker, helmet, { power = 40, makesContact = false }, 1)
+  eq(attacker.mon.hp, 100, "Rocky Helmet honours makesContact = false")
+  HeldItems.rockyHelmet(fb, attacker, helmet, pdata.moves.TACKLE, 2)
+  eq(attacker.mon.hp, 60, "Rocky Helmet applies per landed hit")
+
+  -- Choice lock and Assault Vest selection refusals
+  local chooser = battler("EEVEE", "CHOICE_BAND")
+  chooser.curMoves = { { id = "TACKLE", pp = 10 }, { id = "GROWL", pp = 10 } }
+  eq(HeldItems.selectionBlock(pdata, chooser, pdata.moves.GROWL), nil,
+     "Choice holder is free before its first move")
+  chooser.lastMove = "TACKLE"
+  check(HeldItems.selectionBlock(pdata, chooser, pdata.moves.GROWL) ~= nil,
+        "Choice holder is locked out of other moves")
+  eq(HeldItems.selectionBlock(pdata, chooser, pdata.moves.TACKLE), nil,
+     "Choice holder may repeat its locked move")
+  chooser.curMoves[1].pp = 0
+  eq(HeldItems.selectionBlock(pdata, chooser, pdata.moves.GROWL), nil,
+     "Choice lock releases once the locked move is out of PP")
+  chooser.curMoves[1].pp = 10
+  chooser.lastMove = "METRONOME_PICK"
+  eq(HeldItems.selectionBlock(pdata, chooser, pdata.moves.GROWL), nil,
+     "Choice lock on a move not in the moveset does not bind")
+  local vest = battler("EEVEE", "ASSAULT_VEST")
+  check(HeldItems.selectionBlock(pdata, vest, pdata.moves.GROWL) ~= nil,
+        "Assault Vest refuses status moves")
+  eq(HeldItems.selectionBlock(pdata, vest, pdata.moves.TACKLE), nil,
+     "Assault Vest allows damaging moves")
+
+  -- The AI obeys the same lock
+  local TrainerAI = require("src.battle.TrainerAI")
+  local ai = battler("EEVEE", "CHOICE_BAND")
+  ai.isPlayer = false
+  ai.curMoves = { { id = "TACKLE", pp = 10 }, { id = "GROWL", pp = 10 } }
+  ai.lastMove = "TACKLE"
+  local picked = TrainerAI.chooseMove(ai, function(lo) return lo end,
+    { data = pdata, ruleset = {} })
+  eq(picked and picked.id, "TACKLE", "AI Choice holder picks its locked move")
   GameVersion.set(before)
 end
 
