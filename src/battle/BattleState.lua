@@ -10311,7 +10311,7 @@ local function modernHpColour(frac)
   return { 0.30, 0.80, 0.35 }
 end
 
-local function drawModernCard(rect, b)
+local function drawModernCard(rect, b, statusLabelFn)
   local x, y, w, h = rect.x, rect.y, rect.w, rect.h
   love.graphics.setColor(MODERN_CARD_FILL[1], MODERN_CARD_FILL[2],
                          MODERN_CARD_FILL[3], MODERN_CARD_FILL[4])
@@ -10319,9 +10319,19 @@ local function drawModernCard(rect, b)
   love.graphics.setColor(1, 1, 1, 1)
   drawHudName(b.name, x + 2, y + 1, x + w - 20)
   Font.draw("Lv" .. tostring(b.mon.level), x + w - 18, y + 1)
+  -- Status (PSN/PAR/SLP/...): the classic HUD shows it in place of the Lv
+  -- tile (see drawHUDs below); the modern card keeps Lv always visible, so
+  -- the status label goes to the right of the HP bar instead, shrinking the
+  -- bar to make room rather than overlapping it (2026-09-27: MenuSkin
+  -- doubles were hiding every status ailment, since drawModernDoubleHUDs
+  -- never drew one at all).
+  local statusW = 0
+  if b.shownStatus and statusLabelFn then
+    statusW = 18
+  end
   local hp, max = shownHP(b), b.mon.stats.hp
   local frac = max > 0 and math.max(0, math.min(1, hp / max)) or 0
-  local barX, barY, barW, barH = x + 2, y + 9, w - 4, 4
+  local barX, barY, barW, barH = x + 2, y + 9, w - 4 - statusW, 4
   love.graphics.setColor(0.25, 0.25, 0.28, 1)
   love.graphics.rectangle("fill", barX, barY, barW, barH)
   local fillW = math.floor(barW * frac)
@@ -10329,6 +10339,10 @@ local function drawModernCard(rect, b)
     local c = modernHpColour(frac)
     love.graphics.setColor(c[1], c[2], c[3], 1)
     love.graphics.rectangle("fill", barX, barY, fillW, barH)
+  end
+  if statusW > 0 then
+    love.graphics.setColor(1, 0.75, 0.3, 1)
+    Font.draw(statusLabelFn({ status = b.shownStatus }), barX + barW + 2, y + 8)
   end
   love.graphics.setColor(1, 1, 1, 1)
 end
@@ -10339,24 +10353,25 @@ function BattleState:drawModernDoubleHUDs(slide)
   local MenuSkin = require("src.ui.MenuSkin")
   if not (self:classicDouble() and MenuSkin.active()) then return false end
   if slide ~= 0 then return false end
+  local statusLabelFn = function(t) return self:statusLabel(t) end
   if self.enemy and not self.showEnemyTrainer and not self.enemySendingOut
      and not self:growInScale(self.enemy) and not self.introBalls
      and not self.enemy.fainted then
-    drawModernCard(MODERN_CARD.enemyTop, self.enemy)
+    drawModernCard(MODERN_CARD.enemyTop, self.enemy, statusLabelFn)
   end
   local foe = self:battlerAt(BattleState.POS.OPPONENT_RIGHT)
   if foe and foe.mon and not foe.fainted and not self:sideArriving(false, slide)
      and not self:growInScale(foe) then
-    drawModernCard(MODERN_CARD.enemyBottom, foe)
+    drawModernCard(MODERN_CARD.enemyBottom, foe, statusLabelFn)
   end
   local hidePlayer = self.safari or self:demoHidesPlayer()
   if self.player and not hidePlayer and not self.showPlayerBack then
-    drawModernCard(MODERN_CARD.playerTop, self.player)
+    drawModernCard(MODERN_CARD.playerTop, self.player, statusLabelFn)
   end
   local ally = self:battlerAt(BattleState.POS.PLAYER_RIGHT)
   if ally and ally.mon and not (self.safari or self:demoHidesPlayer())
      and not self:sideArriving(true, slide) and not self:growInScale(ally) then
-    drawModernCard(MODERN_CARD.playerBottom, ally)
+    drawModernCard(MODERN_CARD.playerBottom, ally, statusLabelFn)
   end
   return true
 end
@@ -10367,6 +10382,20 @@ function BattleState:drawHUDs(slide)
   -- Gen3Battle.draw used to call its layer functions directly, which meant a
   -- mod wrapping this name never saw a Gen 3 battle at all.
   if self:gen3Layout() then return Gen3Battle.drawHUDs(self, slide) end
+  -- Modern-card doubles draw their own name/Lv/HP/status blocks for all four
+  -- battlers, so the classic lead HUD below (enemy name/HP/status, player
+  -- name/HP/exp) is redundant here and stays skipped.
+  --
+  -- The classic-tile intro/replace pokeball rows (showIntroBalls,
+  -- showEnemyBalls below) are a SEPARATE gap the modern card has no
+  -- equivalent for -- but they are not drawn here either: they share pixel
+  -- coordinates with the classic enemy HUD block (hudTile chrome at
+  -- 8,16-88,24), which sits inside the modern enemyTop/enemyBottom cards'
+  -- own rect (4,4-52,36) -- drawing both stacks the GBC ball-row chrome on
+  -- top of the translucent cards. Giving the ball rows their own modern-card
+  -- position is a design decision (where, what they look like next to the
+  -- cards), not a one-line fix, so it is left for whoever picks this up --
+  -- see the project note on this HUD for the open items.
   if self:drawModernDoubleHUDs(slide) then return end
   -- the HUD clears with the send-out text (ClearScreenArea,
   -- core.asm:1414-1417) and DrawEnemyHUDAndHPBar (1435) only redraws
