@@ -70,8 +70,12 @@ function StartMenu.new(game)
     end })
   end
 
-  -- the player's name opens the trainer card (StartMenu_TrainerInfo)
-  table.insert(items, { label = game.save.player.name or "RED",
+  -- the player's name opens the trainer card (StartMenu_TrainerInfo) --
+  -- a story with no badges at all (Badges.list returning {}, same check
+  -- TrainerCard.lua uses to swap the BADGES page for the party image) has
+  -- nothing gym-related to name the row after, so it reads PARTY instead.
+  local noBadges = #require("src.inventory.Badges").list(game.data) == 0
+  table.insert(items, { label = noBadges and Strings("PARTY") or (game.save.player.name or "RED"),
     onSelect = function()
       Screens.push(game, "TrainerCard", { onCancel = reopen })
     end })

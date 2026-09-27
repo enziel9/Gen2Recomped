@@ -786,7 +786,33 @@ GameVersion.VERSIONS = {
     label = "Polished Crystal",
     displayName = "Pokemon Polished Crystal",
     launcherName = "Polished Crystal",
-    sha1 = "6930b48af5844d373e3c9130f26d6dd1084cf4ed",
+    -- Our own build with Route39's human NPCs/trainers stripped from the
+    -- source (maps/Route39.asm in the polishedcrystal checkout, 2026-09-26 --
+    -- clears room for pokemon-wish's own story on the same geography), same
+    -- v3.2.3 tag otherwise. Local dev ROM, not a "fixed"/hacked dump someone
+    -- else's cartridge would ever produce.
+    --
+    -- THIS, not the stock cartridge below, is the primary sha1: the manifest
+    -- (tools/rom_manifest_polishedcrystal.json) is regenerated straight off
+    -- THIS build's own .sym/.gbc via tools/polished_symbols.py +
+    -- polished_tables.py, so its every address is exact for this ROM and nothing
+    -- else. The comment a page down about sha1Alt ("two Polished Crystal builds
+    -- do not [decode identically]... supporting another build means running
+    -- polished_symbols.py against ITS .sym and .gbc and shipping that
+    -- manifest") is the reason: accepting the stock 6930b48a cartridge under
+    -- THIS manifest is exactly the failure that comment warns about -- an
+    -- import that finishes and reads SpriteHeaders (and everything after it)
+    -- a few hundred bytes off, which is what silently turned every non-Gramps
+    -- overworld NPC into an uncoloured SPRITE_RED fallback (2026-09-27).
+    sha1 = "fac83fcf30fa662878e2a93f5abc5b3da84ea9e2",
+    -- The stock v3.2.3 cartridge. Kept as an alt ONLY because Route39's patch
+    -- does not touch anything importable reads before SpriteHeaders in bank 5
+    -- -- so the two builds' symbol tables agree up to there, same as Crystal's
+    -- two revisions agreeing on the three tables the extractor reads. Anyone
+    -- who hits an import bug on stock 6930b48a and NOT on fac83fcf has found
+    -- the boundary of that agreement; the real fix is generating that build's
+    -- own manifest, not stretching this one further.
+    sha1Alt = { "6930b48af5844d373e3c9130f26d6dd1084cf4ed" },
     manifest = "tools/rom_manifest_polishedcrystal.json",
     cachePrefix = "polishedcrystal/",
     saveSuffix = "_polishedcrystal",

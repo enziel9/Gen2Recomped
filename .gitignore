@@ -25,6 +25,16 @@ mods/example_mew_starter/assets/
 # that into the committed tools/rom_manifest_*.json.
 tools/vendor/
 
+# The RGBDS binaries (rgbasm/rgblink/rgbfix/rgbgfx) used locally to rebuild
+# Polished Crystal after a source patch (see GameVersion.lua's polishedcrystal
+# entry) -- same "only the .sym output matters" reasoning as tools/vendor/
+# above, just fetched to a different folder name.
+tools/rgbds/
+
+# The LÖVE 11.5 win64 runtime (lovec.exe etc.), fetched locally to run the
+# engine without a system-wide LÖVE install. Not project content.
+love-runtime/
+
 # NOTE: data/generated_gen2_{gold,silver}/ are deliberately COMMITTED. They
 # are cart-free scaffolds -- ids, ordering and pret labels only, with text as
 # {GEN2_TEXT:bank:addr:label} refs -- and RomExtractorGen2 decodes the actual

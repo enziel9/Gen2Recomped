@@ -15063,6 +15063,19 @@ function RomExtractorGen2:extractRuntimeScaffolds()
       gfxId = (tilesetManifest.TilesetTraditionalHouse and "TilesetTraditionalHouse")
           or (tilesetManifest.TilesetHouse and "TilesetHouse")
           or gfxId
+    elseif type(spec.symbol) == "string" and spec.symbol ~= "" then
+      -- Polished numbers a tileset family's day/weather/special variants
+      -- (TilesetJohto1..5, TilesetKanto1..2, TilesetGym1..3) instead of
+      -- shipping one bare <Tileset>Meta/Attr/Coll like Gold/Crystal --
+      -- "TilesetJohto" alone resolves to nothing, so gfxId .. "Attr" never
+      -- found a symbol and every Johto/Kanto/Gym map fell back to the flat
+      -- grey placeholder atlas (colors=NIL in the terrain-atlas log).
+      -- data/tilesets.asm confirms the *1 member of each family owns the
+      -- real Meta/Attr/Coll (the others only add their own GFX1/GFX2 for a
+      -- different season or special room) -- manifest.tilesets[id].symbol
+      -- points there, same override shape HOUSE already used above, just
+      -- data-driven instead of hardcoded so it covers all three families.
+      gfxId = spec.symbol
     end
     local base = spec.imageBase or (id == "HOUSE" and "traditionalhouse"
                                    or id:gsub("^Tileset", ""):lower())

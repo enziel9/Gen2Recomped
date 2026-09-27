@@ -10276,12 +10276,98 @@ function BattleState:flankHuds(slide)
 end
 
 -- the BG-tile UI: HUDs, pokeball rows, safari ball count.  Grayscale;
+-- Modern double HUD (Matteo, 2026-09-25, reference: a mobile 2v2 battle
+-- screenshot): two dark translucent cards per side, stacked, enemy pair
+-- top-right and player pair bottom-left -- not the earlier per-lead/
+-- per-flank split (tried and rejected once already this session). Name +
+-- gender + Lv on one row, a plain coloured HP bar on the next, no exact
+-- numbers (the reference shows none). Opt-in via MenuSkin.active() so a
+-- vanilla double keeps today's classic tile HUD untouched.
+-- Went through 74->34px wide (Matteo, 2026-09-25): 34 was picked purely off
+-- screen-share proportions and never checked against the font -- a 9-glyph
+-- name like PIDGEOTTO needs ~50-56px at this font's flat 8px advance before
+-- drawHudName's squeeze mangles it into single unreadable glyphs (confirmed
+-- live: "PIDGEOTTO Lv7" read as "??Lv7"). 56 is that floor plus the "Lv99"
+-- slot. Player pair moved right (x 4->20) per Matteo's request -- still
+-- clear of the player's own back sprite, which sits further right again.
+-- Sides SWAPPED (Matteo, 2026-09-25): "le barre dei nemici devono stare a
+-- sinistra e non destra. quelle del nostro team a destra e non sinistra" --
+-- a fixed rule, not tied to where either sprite happens to render (Matteo
+-- confirmed: fixed left/right, not sprite-adaptive). Also raised off y=4:
+-- the enemy pair at x=6 now sits where the enemy's own OWN sprite renders
+-- (left-of-centre in this 3D arena), so pushed further up/narrower to clear
+-- it rather than overlapping the mon's head -- see w=48 below (was 56).
+local MODERN_CARD = {
+  enemyTop    = { x = 4, y = 4,  w = 48, h = 15 },
+  enemyBottom = { x = 4, y = 21, w = 48, h = 15 },
+  playerTop    = { x = 108, y = 62, w = 48, h = 15 },
+  playerBottom = { x = 108, y = 79, w = 48, h = 15 },
+}
+local MODERN_CARD_FILL = { 0.05, 0.05, 0.08, 0.72 }
+
+local function modernHpColour(frac)
+  if frac <= 0.20 then return { 0.85, 0.20, 0.20 } end
+  if frac <= 0.50 then return { 0.90, 0.80, 0.20 } end
+  return { 0.30, 0.80, 0.35 }
+end
+
+local function drawModernCard(rect, b)
+  local x, y, w, h = rect.x, rect.y, rect.w, rect.h
+  love.graphics.setColor(MODERN_CARD_FILL[1], MODERN_CARD_FILL[2],
+                         MODERN_CARD_FILL[3], MODERN_CARD_FILL[4])
+  love.graphics.rectangle("fill", x, y, w, h)
+  love.graphics.setColor(1, 1, 1, 1)
+  drawHudName(b.name, x + 2, y + 1, x + w - 20)
+  Font.draw("Lv" .. tostring(b.mon.level), x + w - 18, y + 1)
+  local hp, max = shownHP(b), b.mon.stats.hp
+  local frac = max > 0 and math.max(0, math.min(1, hp / max)) or 0
+  local barX, barY, barW, barH = x + 2, y + 9, w - 4, 4
+  love.graphics.setColor(0.25, 0.25, 0.28, 1)
+  love.graphics.rectangle("fill", barX, barY, barW, barH)
+  local fillW = math.floor(barW * frac)
+  if fillW > 0 then
+    local c = modernHpColour(frac)
+    love.graphics.setColor(c[1], c[2], c[3], 1)
+    love.graphics.rectangle("fill", barX, barY, fillW, barH)
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
+-- Draws all four cards and returns true when it did, so the caller skips
+-- the classic tile HUD (lead + flank) entirely rather than drawing both.
+function BattleState:drawModernDoubleHUDs(slide)
+  local MenuSkin = require("src.ui.MenuSkin")
+  if not (self:classicDouble() and MenuSkin.active()) then return false end
+  if slide ~= 0 then return false end
+  if self.enemy and not self.showEnemyTrainer and not self.enemySendingOut
+     and not self:growInScale(self.enemy) and not self.introBalls
+     and not self.enemy.fainted then
+    drawModernCard(MODERN_CARD.enemyTop, self.enemy)
+  end
+  local foe = self:battlerAt(BattleState.POS.OPPONENT_RIGHT)
+  if foe and foe.mon and not foe.fainted and not self:sideArriving(false, slide)
+     and not self:growInScale(foe) then
+    drawModernCard(MODERN_CARD.enemyBottom, foe)
+  end
+  local hidePlayer = self.safari or self:demoHidesPlayer()
+  if self.player and not hidePlayer and not self.showPlayerBack then
+    drawModernCard(MODERN_CARD.playerTop, self.player)
+  end
+  local ally = self:battlerAt(BattleState.POS.PLAYER_RIGHT)
+  if ally and ally.mon and not (self.safari or self:demoHidesPlayer())
+     and not self:sideArriving(true, slide) and not self:growInScale(ally) then
+    drawModernCard(MODERN_CARD.playerBottom, ally)
+  end
+  return true
+end
+
 -- the zone pass colors it in colorized mode.
 function BattleState:drawHUDs(slide)
   -- EMERALD'S OWN, and reached through this method rather than around it.
   -- Gen3Battle.draw used to call its layer functions directly, which meant a
   -- mod wrapping this name never saw a Gen 3 battle at all.
   if self:gen3Layout() then return Gen3Battle.drawHUDs(self, slide) end
+  if self:drawModernDoubleHUDs(slide) then return end
   -- the HUD clears with the send-out text (ClearScreenArea,
   -- core.asm:1414-1417) and DrawEnemyHUDAndHPBar (1435) only redraws
   -- it after the grow-in + cry

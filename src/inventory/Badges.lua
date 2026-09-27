@@ -28,7 +28,9 @@ local GEN2 = {
 
 function Badges.list(data, version)
   local list = data and data.constants and data.constants.badges
-  if type(list) == "table" and #list > 0 then return list end
+  -- an explicit empty list (a mod's constants:patch("badges", {})) means
+  -- the story has no badges at all, distinct from no override being set
+  if type(list) == "table" then return list end
   if require("src.core.GameVersion").isGen2(version) then return GEN2 end
   return VANILLA
 end

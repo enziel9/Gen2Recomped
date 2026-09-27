@@ -998,7 +998,21 @@ end
 -- as their own mask and wear that colour at run time.
 -- v310: Polished Crystal's q4 type chart and 6-byte ItemAttributes.
 -- v312: Polished Crystal abilities, natures and move contact flags.
-local CACHE_FORMAT = "rom-cache-v312:"
+-- v313: Polished Crystal tileset symbol overrides (TilesetJohto/Kanto/Gym
+-- resolve to their *1 family member's Meta/Attr/Coll -- see
+-- manifest.tilesets in rom_manifest_polishedcrystal.json).
+-- v314: rom_manifest_polishedcrystal.json's symbol table was regenerated
+-- against the Route39-patched ROM (SHA1 fac83fcf..., see GameVersion.lua's
+-- sha1Alt) via tools/polished_symbols.py -- the manifest on disk since the
+-- last symbol-table edit still had the addresses from the UNPATCHED build,
+-- because polished_symbols.py overwrites the whole file and nobody had
+-- re-run it after the Route39 patch shifted bank/address for everything
+-- from SpriteHeaders onward. Every *SpriteGFX symbol past roughly slot 100
+-- (Lass, Teacher, Youngster, and every generic trainer after them) resolved
+-- to the wrong bank:address, so NPC.lua's resolveSpriteDef found no match
+-- and silently fell back to SPRITE_RED for all of them -- the "every NPC in
+-- the village is a flat, uncoloured silhouette of the player" bug.
+local CACHE_FORMAT = "rom-cache-v314:"
 -- The completion marker is written under each version's cache prefix
 -- (rom-cache.complete for Red, blue/rom-cache.complete for Blue).
 local MARKER_PATH = "rom-cache.complete"

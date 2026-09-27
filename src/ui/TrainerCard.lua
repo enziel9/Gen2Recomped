@@ -121,6 +121,9 @@ function TrainerCard.new(game, opts)
     end
   end
   self.circle = tryImage("assets/generated/trainer_card/circle_tile.png")
+  -- a story with no badges at all (Badges.list returning {}) shows this
+  -- in place of the badge grid instead of an empty page
+  self.party = tryImage("assets/generated/trainer_card/party.png")
   local picPath, picTrueColor = require("src.pokemon.Sprites").playerPath(
     game.data, "front", { kind = "trainer_card" })
   self.pic = tryImage(picPath)
@@ -253,13 +256,28 @@ function TrainerCard:drawGen2()
     Font.draw(Strings("PLAY TIME"), 16, 96)
     Font.draw(("%3d:%02d"):format(math.floor(t / 3600),
                                   math.floor(t / 60) % 60), 104, 96)
-    Font.draw(Strings("BADGES"), 96, 120)
+    local hasBadges = #Badges.list(self.game.data) > 0
+    Font.draw(hasBadges and Strings("BADGES") or Strings("PARTY"), 96, 120)
     love.graphics.setColor(1, 1, 1, 1)
     return
   end
 
   -- badge pages: the leader's face always, the badge laid over it once won
   local badges = Badges.list(self.game.data)
+  if #badges == 0 then
+    -- no gyms in this story (badges constants patched to {}): the party
+    -- image stands in for the grid instead of an empty "BADGES" page
+    if self.party then
+      love.graphics.setColor(1, 1, 1, 1)
+      local pw, ph = self.party:getDimensions()
+      local px, py = math.floor((160 - pw) / 2), 62 + math.floor((82 - ph) / 2)
+      -- own art, own colors -- like self.pic/the badge slot sheets, opt out
+      -- of the card's 4-shade GBC remap instead of being washed to it
+      require("src.render.PaletteFX").markTrueColor(px, py, pw, ph)
+      love.graphics.draw(self.party, px, py)
+    end
+    return
+  end
   local first = (self.page - 1) * PER_PAGE
   Font.draw(Strings("BADGES"), 16, 64)
   for slot = 0, math.min(PER_PAGE, #badges - first) - 1 do
