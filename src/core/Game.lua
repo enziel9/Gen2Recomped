@@ -125,9 +125,11 @@ function Game:load()
     setmetatable({ game = self }, { __index = self }))
 
   -- boot into the title screen (engine/movie/title.asm); NEW GAME runs
-  -- the Oak speech + naming, CONTINUE restores the save.  The headless
-  -- autopilot skips straight into the overworld.
-  if os.getenv("POKEPORT_AUTOPILOT") then
+  -- the Oak speech + naming, CONTINUE restores the save.  Headless runs
+  -- (autopilot or a POKEPORT_DRIVER script) skip straight into the
+  -- overworld -- main.lua's own "scripted" check already treats both env
+  -- vars the same way for the launcher bypass, this just matches it here.
+  if os.getenv("POKEPORT_AUTOPILOT") or os.getenv("POKEPORT_DRIVER") then
     StateStack:push(OverworldState, self.save.player.map,
                     self.save.player.x, self.save.player.y, self.save.player.facing)
   else
