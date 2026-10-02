@@ -5280,6 +5280,7 @@
     "trainerGroupBytes": 3,
     "trainerPartyBits": 1,
     "tutorCount": 35,
+    "typeMatchupScale": 16,
     "typeNamesOffsets": 1,
     "wildSlotBytes": 3
   },

@@ -16464,6 +16464,11 @@ function RomExtractorGen2:extractRuntimeScaffolds()
 
   local matchupSym = self:symbol("TypeMatchups")
   if matchupSym and self.rom and #typeChart.matchups == 0 then
+    -- Polished Crystal stores the multiplier as q4 fixed point
+    -- (SUPER_EFFECTIVE 2.0q4 = $20, NOT_VERY_EFFECTIVE 0.5q4 = $08), not
+    -- Crystal's x10.  Rescaled here so TypeChart keeps speaking x10; read raw,
+    -- $20 came out 3.2x and $08 0.8x.
+    local matchupScale = self:layout("typeMatchupScale", 10)
     local address = matchupSym.address
     for _ = 1, 256 do
       local first = self.rom:byte(matchupSym.bank, address)
@@ -16476,7 +16481,8 @@ function RomExtractorGen2:extractRuntimeScaffolds()
         local defender = self:gen2TypeName(row[2])
         if attacker and defender then
           typeChart.matchups[#typeChart.matchups + 1] = {
-            attacker = attacker, defender = defender, multiplier = row[3],
+            attacker = attacker, defender = defender,
+            multiplier = math.floor(row[3] * 10 / matchupScale + 0.5),
           }
         end
         address = address + 3

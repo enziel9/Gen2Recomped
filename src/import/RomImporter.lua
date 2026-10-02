@@ -1222,7 +1222,8 @@ end
 --       the one gate that forces a re-import, and main's change alters what a
 --       FireRed cache CONTAINS -- so keeping v359 would let a FireRed cache
 --       built before the tutor fix pass as current. v360 invalidates both.
-local CACHE_FORMAT = "rom-cache-v360:"
+-- v361: Polished Crystal TypeMatchups rescaled from q4 to x10.
+local CACHE_FORMAT = "rom-cache-v361:"
 -- The completion marker is written under each version's cache prefix
 -- (rom-cache.complete for Red, blue/rom-cache.complete for Blue).
 local MARKER_PATH = "rom-cache.complete"
