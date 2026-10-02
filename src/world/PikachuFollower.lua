@@ -54,7 +54,9 @@ local HAPPINESS_CHANGES = {
 }
 
 -- the companion mon: a healthy (or any) party PIKACHU stands in for the
--- original's OT-checked starter, same approximation as shouldSpawn
+-- original's OT-checked starter, same approximation as shouldSpawn.  Yellow-
+-- only: TalkToPikachu's happiness/mood/emotion system below is keyed to this
+-- one mon and has no equivalent for any other species.
 function PikachuFollower.starterInParty(save, needHealthy)
   for _, mon in ipairs(save.party or {}) do
     if mon.species == "PIKACHU"
@@ -62,6 +64,21 @@ function PikachuFollower.starterInParty(save, needHealthy)
       return mon
     end
   end
+  return nil
+end
+
+-- The mon this follower instance represents.  Yellow keeps its original
+-- rule verbatim -- any healthy Pikachu anywhere in the party, not only the
+-- lead, since TalkToPikachu's happiness/mood system is keyed to that same
+-- mon regardless of slot.  Every other case is the generalized follower
+-- (#571): whatever alive mon leads the party, any species, any version --
+-- Yellow included, once nothing above claims Pikachu for the mood system.
+local function followerMon(save)
+  if GameVersion.isYellow() then
+    return PikachuFollower.starterInParty(save, true)
+  end
+  local mon = (save.party or {})[1]
+  if mon and (mon.hp or 0) > 0 then return mon end
   return nil
 end
 
@@ -114,36 +131,75 @@ function PikachuFollower.onStep(save)
   end
 end
 
--- ShouldPikachuSpawn, approximated: Yellow, the lab gift happened, and a
--- healthy Pikachu is in the party (the original checks the starter's OT
--- identity; a traded second Pikachu standing in is accepted here).
--- Surfing and biking hide the follower (BIT_PIKACHU_SPAWN flags).
+-- ShouldPikachuSpawn, generalized (#571).  Yellow keeps its original gating
+-- verbatim (the lab gift happened, a real overworld sheet exists, a healthy
+-- Pikachu is somewhere in the party -- a traded second Pikachu standing in
+-- is accepted, as before).  Every other version/species just needs an alive
+-- lead mon: followerMon above already picks the right one for either case.
+-- Surfing and biking hide the follower in both (BIT_PIKACHU_SPAWN flags).
 local function shouldSpawn(game, ow)
-  if not GameVersion.isYellow() then return false end
   local save = game.save
-  if not (save.flags and save.flags.EVENT_GOT_STARTER) then return false end
   if save.onBike or (ow.player and ow.player.surfing) then return false end
-  if not (game.data.sprites and game.data.sprites.SPRITE_PIKACHU) then
-    return false
+  if GameVersion.isYellow() then
+    if not (save.flags and save.flags.EVENT_GOT_STARTER) then return false end
+    if not (game.data.sprites and game.data.sprites.SPRITE_PIKACHU) then
+      return false
+    end
   end
-  for _, mon in ipairs(save.party or {}) do
-    if mon.species == "PIKACHU" and (mon.hp or 0) > 0 then return true end
-  end
-  return false
+  return followerMon(save) ~= nil
 end
 
-local function makeFollower(game, ow, x, y, facing)
+-- A real walk-cycle overworld sheet (six 16x16 stand/walk frames) exists
+-- only for Yellow's Pikachu -- SPRITE_PIKACHU, ripped from the cartridge.
+-- Nothing else, including every one of the mod's custom species, ships one.
+-- For everything else this synthesizes a single-frame "sprite" out of the
+-- species' own front battle pic: SpriteRenderer already draws a `frames <=
+-- 1` sheet as one fixed pose with no walk cycle (the same path an item ball
+-- or fossil takes), so no renderer change is needed, and going through
+-- Sprites.path means the follower inherits the exact same trueColor flag
+-- battle already resolves for that species -- the same fix that corrected
+-- the 185 custom species' battle palettes applies here for free (#571).
+-- Synthesized once per species and cached on game.data.sprites.
+local function followerSpriteId(game, species)
+  if species == "PIKACHU" and game.data.sprites
+     and game.data.sprites.SPRITE_PIKACHU then
+    return "SPRITE_PIKACHU"
+  end
+  local sprites = game.data.sprites
+  if not sprites then return nil end
+  local id = "FOLLOWER_" .. species
+  if sprites[id] then return id end
+  local Sprites = require("src.pokemon.Sprites")
+  local path, trueColor = Sprites.path(game.data, species, "front",
+                                       { kind = "overworld" })
+  if not path then return nil end
+  local image = require("src.render.Assets").image(path)
+  local w, h = image:getDimensions()
+  sprites[id] = {
+    id = id, image = path, frames = 1, walker = false,
+    trueColor = trueColor, frameWidth = w, frameHeight = h,
+  }
+  return id
+end
+
+local function makeFollower(game, ow, x, y, facing, mon)
   local NPC = require("src.world.NPC")
+  local species = (mon and mon.species) or "PIKACHU"
+  local spriteId = followerSpriteId(game, species) or "SPRITE_PIKACHU"
   local npc = NPC.new(game.data, ow.map.id, {
-    index = INDEX, name = "PIKACHU_FOLLOWER", sprite = "SPRITE_PIKACHU",
+    index = INDEX, name = "PARTY_FOLLOWER", sprite = spriteId,
     movement = "STAY", range = "NONE", x = x, y = y,
   })
   npc.pikachuFollower = true
+  npc.followerSpecies = species
   npc.passable = true -- never blocks a step (Collision.occupied)
   npc.facing = facing or "down"
   -- the idle animations below pose the walk cycle with no step under it,
   -- which NPC:walkPhase (moving-only) cannot express.  An instance field
   -- shadows the class method, so NPC:pose keeps working unchanged (#411).
+  -- (A no-op for the single-frame generic case above: SpriteRenderer never
+  -- calls walkPhase for a `frames <= 1` sheet, so this only ever matters
+  -- for Pikachu's real walk-cycle sheet.)
   npc.walkPhase = function(self)
     local idle = self.idle
     if idle and idle.phase then return idle.phase % 2 end
@@ -208,7 +264,7 @@ function PikachuFollower.onMapEntered(game, ow, opts)
     return
   end
   local x, y = spawnCell(ow)
-  local npc = makeFollower(game, ow, x, y, ow.player.facing)
+  local npc = makeFollower(game, ow, x, y, ow.player.facing, followerMon(game.save))
   table.insert(ow.npcs, npc)
   -- entities is the draw list; passable keeps it out of collision
   table.insert(ow.entities, npc)
@@ -405,6 +461,18 @@ function PikachuFollower.update(game, ow)
   if not shouldSpawn(game, ow) then
     remove(ow)
     return
+  end
+  -- the lead changed under the same follower instance -- party reorder, a
+  -- faint-swap, a PC withdrawal -- so re-skin it in place rather than
+  -- respawn, which would otherwise pop it behind the player mid-stride.
+  local mon = followerMon(game.save)
+  if mon and npc.followerSpecies ~= mon.species then
+    local spriteId = followerSpriteId(game, mon.species)
+    if spriteId then
+      npc.def.sprite = spriteId
+      npc:refreshSprite(game.data)
+      npc.followerSpecies = mon.species
+    end
   end
   local p = ow.player
   local trail = ow.pikachuTrail
@@ -697,6 +765,14 @@ function PikachuFollower.talk(game, ow, npc, done)
   idleReset(npc) -- the bubble anchor reads px/py, and the hold freezes it
   npc:facePlayer(ow.player)
   ow.player.facing = OPPOSITE[npc.facing] or ow.player.facing
+  -- TalkToPikachu's cry/bubble/pikapic beat below is Yellow's Pikachu alone
+  -- (data/pikachu/pikachu_emotions.asm has no equivalent for any other
+  -- species); the generic follower just turns to face the player, like a
+  -- Gen 2 NPC with nothing scripted to say (#571).
+  if npc.followerSpecies ~= "PIKACHU" or not GameVersion.isYellow() then
+    if done then done() end
+    return
+  end
   local save = game.save
   local emotion = selectEmotion(game, ow, save)
   local e = EMOTIONS[emotion] or EMOTIONS[1]
