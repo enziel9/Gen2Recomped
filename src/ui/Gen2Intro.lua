@@ -145,7 +145,7 @@ function Gen2Intro.new(game, onDone)
   -- Branding replaces the Nintendo copyright card and the GAME FREAK
   -- splash outright, so the ripped art for both is deliberately not drawn.
   local studio = intro.studio or {}
-  self.brand = studio.card or studio.credit or "UNDERdecodedHD"
+  self.brand = studio.card or studio.credit or "DA MAMMA E PAPA'"
   self.brandYear = studio.year or "2026"
   self.stars = tryImage(intro.stars)
   self.water = tryImage(intro.water)
