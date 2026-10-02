@@ -499,6 +499,11 @@ R.maps = {
     -- "thunderstorm"/"sandstorm"/"snow" -- fixed for the map, no cartridge
     -- equivalent of Hoenn's day-cycling Overcast system exists to vary it.
     weather = f.opt(f.str),
+    -- Gen 2 map group.  A Polished outdoor tileset does not own its nine roof
+    -- tiles: TileRenderer.gen2RoofFor injects them from data.field.gen2Roofs
+    -- by this number, so a synthetic map on such a tileset needs one or its
+    -- roofs draw as a flat palette colour.
+    group = f.opt(f.int(0)),
     -- A named SGB palette, which wins over the field.palettes cascade
     -- (OverworldController.lua:506 reads map.def.palette first).  Deliberately
     -- a plain string rather than f.id("palettes"): the ROM-free fixture base
