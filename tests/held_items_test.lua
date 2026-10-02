@@ -72,18 +72,18 @@ do
   local b = battler("RATTATA", nil, 100)
   local calls = 0
   local rng = function() calls = calls + 1; return 0 end
-  check(TurnOrder.firstMover(a, { priority = 0 }, b, { priority = 0 }, rng, nil, data),
+  check(TurnOrder.firstMover(a, { priority = 0 }, b, { priority = 0 }, rng, nil, nil, data),
         "Quick Claw can move a slower holder first")
   eq(calls, 1, "Quick Claw consumes one roll when the first holder succeeds")
   calls = 0
-  check(not TurnOrder.firstMover(a, { priority = 0 }, b, { priority = 1 }, rng, nil, data),
+  check(not TurnOrder.firstMover(a, { priority = 0 }, b, { priority = 1 }, rng, nil, nil, data),
         "Quick Claw never crosses move-priority classes")
   eq(calls, 0, "different move priority does not roll Quick Claw")
 
   local qa = battler("EEVEE", "QUICK_CLAW", 10)
   local qb = battler("RATTATA", "QUICK_CLAW", 100)
   calls = 0
-  check(TurnOrder.firstMover(qa, {}, qb, {}, rng, nil, data),
+  check(TurnOrder.firstMover(qa, {}, qb, {}, rng, nil, nil, data),
         "first checked Quick Claw holder wins immediately")
   eq(calls, 1, "two holders do not pre-roll both claws")
 end
@@ -272,9 +272,42 @@ end
 do
   local calls = 0
   local enc = { grass = { rate = 25, buckets = { 256 }, slots = { { species = "RATTATA", level = 2 } } } }
-  local got = Encounter.roll(enc, function() calls = calls + 1; return calls == 1 and 12 or 0 end, 12)
+  local got = Encounter.roll(enc, function() calls = calls + 1; return calls == 1 and 12 or 0 end, nil, 12)
   check(got == nil, "halved encounter rate rejects roll equal to threshold")
   eq(calls, 1, "failed rate check consumes no encounter-slot roll")
+end
+
+-- Polished Crystal's renumbered HELD_* bytes translate onto Crystal's.
+do
+  local GameVersion = require("src.core.GameVersion")
+  local before = GameVersion.get()
+  GameVersion.set("polishedcrystal")
+  local pdata = { items = {
+    LEFTOVERS = item("LEFTOVERS", 2, 10),
+    LIFE_ORB = item("LIFE_ORB", 50, 0),
+    PECHA_BERRY = item("PECHA_BERRY", 5, 8),
+    LUM_BERRY = item("LUM_BERRY", 5, -1),
+    PIXIE_PLATE = item("PIXIE_PLATE", 16, 17),
+    DRAGON_FANG = item("DRAGON_FANG", 16, 15),
+    QUICK_CLAW = item("QUICK_CLAW", 22, 20),
+  } }
+  local function holder(key) return { mon = { item = key } } end
+  eq(HeldItems.effect(pdata, holder("LEFTOVERS")), HeldItems.EFFECT.LEFTOVERS,
+     "Polished HELD_LEFTOVERS (2) is Leftovers")
+  eq(HeldItems.effect(pdata, holder("LIFE_ORB")), HeldItems.EFFECT.NONE,
+     "Polished HELD_LIFE_ORB (50) is not Crystal's Normal boost")
+  eq(HeldItems.effect(pdata, holder("PECHA_BERRY")), HeldItems.EFFECT.HEAL_POISON,
+     "Polished status mask 1<<PSN heals poison")
+  eq(HeldItems.effect(pdata, holder("LUM_BERRY")), HeldItems.EFFECT.HEAL_STATUS,
+     "Polished ALL_STATUS heals everything")
+  local e, p = HeldItems.effect(pdata, holder("DRAGON_FANG"))
+  eq(e, HeldItems.EFFECT.DRAGON_BOOST, "Polished type boost reads the type param")
+  eq(p, 20, "Polished type boost is x1.2")
+  eq(HeldItems.applyTypeBoost(pdata, holder("PIXIE_PLATE"), "FAIRY", 100), 120,
+     "Polished Fairy boost applies")
+  e, p = HeldItems.effect(pdata, holder("QUICK_CLAW"))
+  eq(p, 51, "Polished Quick Claw 20% rescaled to /256")
+  GameVersion.set(before)
 end
 
 S.finish()
