@@ -16406,7 +16406,9 @@ function RomExtractorGen2:extractRuntimeScaffolds()
                       types = {}, ids = {} }
   -- walk ids rather than GEN2_TYPES so a hack's own types (Prism's Fairy,
   -- Gas and Sound) end up in the roster too
-  for value = 0, 27 do
+  -- Polished's TypeNames table shares its slots with the egg-group names from
+  -- 19 up, so the walk stops at the manifest's last real type id.
+  for value = 0, self:layout("typeIdMax", 27) do
     local typeName = self:gen2TypeName(value)
     if typeName and not typeChart.types[typeName] then
       typeChart.types[typeName] = {
