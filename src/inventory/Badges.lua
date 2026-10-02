@@ -42,9 +42,13 @@ end
 -- R/B hands badges over as inventory items; Gen2 has no badge item at all --
 -- its gyms run `setflag ENGINE_ZEPHYRBADGE`, which lands in save.flags under
 -- the badge id (see Gen2ScriptVM's ENGINE_FLAG_NAMES).  Either store counts.
-function Badges.has(save, entry)
+-- `data` is optional (threads through to Bag.inventory's activeCharacter
+-- resolution) -- callers that don't have it in scope fall back to the live
+-- Data singleton, correct for real gameplay.
+function Badges.has(save, entry, data)
   local key = Badges.itemFor(entry)
-  return (save.inventory and save.inventory[key])
+  local inv = require("src.inventory.Bag").inventory(save, data)
+  return (inv and inv[key])
     or (save.flags and save.flags[key]) and true or false
 end
 
@@ -52,7 +56,7 @@ function Badges.count(data, save, version)
   if not save then return 0 end
   local n = 0
   for _, entry in ipairs(Badges.list(data, version)) do
-    if Badges.has(save, entry) then n = n + 1 end
+    if Badges.has(save, entry, data) then n = n + 1 end
   end
   return n
 end

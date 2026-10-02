@@ -5407,7 +5407,7 @@ local function partyKnowsVanilla(moveId)
     local badge = gate and gate.badge
     -- R/B hands badges over as bag items, Gen2 as engine flags; Badges.has
     -- reads either, so this one call covers both
-    if badge and not Badges.has(Game.save, { id = badge }) then
+    if badge and not Badges.has(Game.save, { id = badge }, Game.data) then
       return nil
     end
   end
@@ -6634,7 +6634,7 @@ function OverworldState:tryHiddenObject(fx, fy)
     if h.x == fx and h.y == fy then
       save.hiddenTaken = save.hiddenTaken or {}
       if save.hiddenTaken[key] then return false end
-      if not save.inventory.COIN_CASE then return false end
+      if not require("src.inventory.Bag").inventory(save, Game.data).COIN_CASE then return false end
       save.hiddenTaken[key] = true
       save.coins = math.min(9999, (save.coins or 0) + h.coins)
       require("src.core.Sound").play(Game.data, "Get_Item2")
@@ -6658,7 +6658,7 @@ function OverworldState:tryHiddenObject(fx, fy)
       elseif h.state == "keys" then
         Game.stack:push(TextBox.new(Game, txt._GameCornerSomeonesKeysText
           or Strings("Someone's keys!\nThey'll be back.")))
-      elseif not save.inventory.COIN_CASE then
+      elseif not require("src.inventory.Bag").inventory(save, Game.data).COIN_CASE then
         Game.stack:push(TextBox.new(Game, txt._GameCornerCoinCaseText
           or Strings("A COIN CASE is\nrequired!")))
       elseif (save.coins or 0) == 0 then
@@ -6717,7 +6717,8 @@ function OverworldState:tryHiddenObject(fx, fy)
     if h.x == fx and h.y == fy and facing == "up" then
       local gym = require("data.scripts.gyms")[self.map.id]
       if gym then
-        local key = save.inventory[gym.badge] and "_GymStatueText2" or "_GymStatueText1"
+        local key = require("src.inventory.Bag").inventory(save, Game.data)[gym.badge]
+                    and "_GymStatueText2" or "_GymStatueText1"
         local text = Game.data.text[key]
                      or Strings("{RAM}\nPOKéMON GYM\nLEADER: {RAM}")
         text = text:gsub("{RAM:wGymCityName}", gym.city)
@@ -6772,7 +6773,7 @@ function OverworldState:tryCardKeyDoor(fx, fy)
   end
   if not openBlock then return false end
   local t = Game.data.text
-  if not Game.save.inventory.CARD_KEY then
+  if not require("src.inventory.Bag").inventory(Game.save, Game.data).CARD_KEY then
     Game.stack:push(TextBox.new(Game,
       t._CardKeyFailText or Strings("Darn! It needs a\nCARD KEY!")))
     return true
@@ -7635,8 +7636,8 @@ function OverworldState:checkAshGrass()
   -- grass and gathers nothing -- which is the state most of the route is in
   -- the first time through.
   local sack = ash.sootSack
-  local held = sack and Game.save and Game.save.inventory
-               and (Game.save.inventory[sack] or 0) > 0
+  local held = sack and Game.save
+               and (require("src.inventory.Bag").inventory(Game.save, Game.data)[sack] or 0) > 0
   if held then
     -- the cartridge stops counting at four nines, which is what the glass
     -- workshop's own totals are measured against
@@ -10146,11 +10147,13 @@ function OverworldState:checkVictoryRewards(trainerClass, partyIndex)
     end
   end
   if reward.badge then
-    Game.save.inventory[reward.badge] = 1
+    -- badges bypass Bag.add's capacity/pocket checks the same way any other
+    -- isBadge id does, so a direct add here is safe -- goes through
+    -- resolveBag so it lands in the right character's table
+    require("src.inventory.Bag").add(Game.save, reward.badge, 1, Game.data)
   end
   if reward.item then
-    local inv = Game.save.inventory
-    inv[reward.item] = (inv[reward.item] or 0) + 1
+    require("src.inventory.Bag").add(Game.save, reward.item, 1, Game.data)
     local idef = Game.data.items[reward.item]
     -- GiveItem -> CopyToStringBuffer for "{RAM:wStringBuffer}" received texts
     Game.stringBuffer = idef and idef.name or reward.item
@@ -11586,7 +11589,8 @@ function OverworldState:onStepComplete()
     -- map.ghostBattles: unidentifiable without the named item (the
     -- Pokemon Tower's Silph Scope)
     local ghost = Map.ghostBattles(self.map.def)
-    if ghost and not (ghost.unlessItem and Game.save.inventory[ghost.unlessItem]) then
+    if ghost and not (ghost.unlessItem
+        and require("src.inventory.Bag").inventory(Game.save, Game.data)[ghost.unlessItem]) then
       battle:makeGhost()
     end
     -- Safari game encounters use the BALL/BAIT/ROCK/RUN menu
@@ -11683,7 +11687,7 @@ function OverworldState:checkBadgeGate()
                        or ("PASSED_" .. self.map.id)
     for _, c in ipairs(g.coords) do
       if p.cellX == c.x and p.cellY == c.y then
-        if Game.save.inventory[g.badge] then
+        if require("src.inventory.Bag").inventory(Game.save, Game.data)[g.badge] then
           if not Game.save.flags[passedFlag] then
             Game.save.flags[passedFlag] = true
             -- Route22GateGuardGoRightAheadText plays sound_get_item_1
@@ -11712,7 +11716,7 @@ function OverworldState:checkBadgeGate()
          and not Game.save.flags[guard.event] then
         local badgeName = Game.data.items[guard.badge]
                           and Game.data.items[guard.badge].name or guard.badge
-        if Game.save.inventory[guard.badge] then
+        if require("src.inventory.Bag").inventory(Game.save, Game.data)[guard.badge] then
           Game.save.flags[guard.event] = true
           -- Route23OhThatIsTheBadgeText plays sound_get_item_1
           require("src.core.Sound").play(Game.data, "Get_Item1")
@@ -11755,7 +11759,7 @@ function OverworldState:checkForcedMovement()
           Game.save.forcedBike = true
           return false
         end
-        if (Game.save.inventory.BICYCLE or 0) > 0 then
+        if (require("src.inventory.Bag").inventory(Game.save, Game.data).BICYCLE or 0) > 0 then
           -- CheckForceBikeOrSurf mounts silently; _CyclingIsFunText only
           -- exists as IsSurfingAllowed's refusal (engine/overworld/
           -- field_move_messages.asm), never as a mount message.

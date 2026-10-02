@@ -457,7 +457,8 @@ function Commands.check_flag(ctx, name)
 end
 
 function Commands.check_item(ctx, itemId)
-  ctx.lastCheck = (ctx.save.inventory[itemId] or 0) > 0
+  local inv = require("src.inventory.Bag").inventory(ctx.save, ctx.game.data)
+  ctx.lastCheck = (inv[itemId] or 0) > 0
 end
 
 -- check_dex_owned <n>: lastCheck = the player owns at least n species
@@ -563,15 +564,15 @@ end
 -- Mound Cave's `takeitem DYNAMITE, 5 / siffalse` is the case that shows it --
 -- the "there is still dynamite in the cave" arm was unreachable.
 function Commands.take_item(ctx, itemId, count)
-  local inv = ctx.save.inventory
+  local Bag = require("src.inventory.Bag")
+  local inv = Bag.inventory(ctx.save, ctx.game.data)
   local want = count or 1
   local held = inv[itemId] or 0
   if held < want then
     ctx.lastCheck = false
     return
   end
-  inv[itemId] = held - want
-  if inv[itemId] == 0 then inv[itemId] = nil end
+  Bag.remove(ctx.save, itemId, want, ctx.game.data)
   ctx.lastCheck = true
 end
 
@@ -1194,6 +1195,17 @@ function Commands.give_pokemon(ctx, species, level, skipNickname, opts)
     mon.isEgg = true
     mon.eggSteps = require("src.pokemon.DayCare").eggSteps(ctx.game.data, species)
     skipNickname = true
+  end
+  -- Per-character ownership (data.constants.characterBags, docs/
+  -- superpowers/specs/2026-09-19-per-character-backpack-design.md in the
+  -- pokemon-wish repo): only set when a mod declared the roster, so a mon
+  -- created on a cartridge/mod without this feature never carries a field
+  -- nothing else looks at.  Defaults to the active character, then the
+  -- roster's own first entry -- never guesses at a name the roster didn't
+  -- declare.
+  local roster = ctx.game.data.constants and ctx.game.data.constants.characterBags
+  if type(roster) == "table" and roster[1] then
+    mon.owner = (opts and opts.owner) or ctx.save.activeCharacter or roster[1].id
   end
   ctx.game.stringBuffer = ctx.game.data.pokemon[species].name or species
   ctx.pendingPokemonName = species
