@@ -407,6 +407,19 @@ Schemas.ENGINE = "engine"
 local R = {}
 Schemas.REGISTRIES = R
 
+-- A frame-animated battle pic: one horizontal strip of `count` cells of
+-- `width` x `height`, and a script over them.  Same shape the Gen 2/3 ROM
+-- importers build (src/pokemon/PicAnim.lua documents it), exposed to mods so
+-- hand-authored animated art can use the same player -- including `loop`,
+-- which the imported records never set.
+local picAnimSpec = f.opt(f.rec{
+  sheet = f.path, shinySheet = f.opt(f.path),
+  count = f.int(1), width = f.int(1), height = f.int(1),
+  loop = f.opt(f.bool),
+  play = f.opt(f.list(f.rec{ frame = f.int(0), dur = f.int(1) })),
+  idle = f.opt(f.list(f.rec{ frame = f.int(0), dur = f.int(1) })),
+})
+
 R.pokemon = {
   semantics = "record", target = "pokemon",
   fields = {
@@ -426,6 +439,9 @@ R.pokemon = {
                                item = f.opt(f.id("items")),
                                species = f.id("pokemon") }),
     spriteFront = f.path, spriteBack = f.path, frontSize = f.int(1, 7),
+    -- animated battle pics, one per side; the still above is frame 0 and
+    -- placement is measured off it, so a strip's cells must match its size
+    picAnim = picAnimSpec, picAnimBack = picAnimSpec,
     dexEntry = f.opt(f.rec{ kind = f.str, heightFt = f.int(0),
                             heightIn = f.int(0, 11), weight = f.num,
                             heightM = f.opt(f.num), weightKg = f.opt(f.num),
