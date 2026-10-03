@@ -1227,7 +1227,8 @@ end
 -- v363: Polished pokemon_event objects read their species (SPRITE_MON_nnn, not SPRITE_RED).
 -- v364: Polished HUD sheet keeps the DMG shades (the HP bar fill was black).
 -- v365: Polished intro pics (rival, Oak) read their class from the ROM table, not Gold/Crystal 9 and 10.
-local CACHE_FORMAT = "rom-cache-v365:"
+-- v366: sprite sheets shared by two ids (Engineer/Soldier) get their labels in a fixed order.
+local CACHE_FORMAT = "rom-cache-v366:"
 -- The completion marker is written under each version's cache prefix
 -- (rom-cache.complete for Red, blue/rom-cache.complete for Blue).
 local MARKER_PATH = "rom-cache.complete"

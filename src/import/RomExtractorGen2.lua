@@ -5638,9 +5638,19 @@ function RomExtractorGen2:gen2OverworldSprites()
     local base = type(name) == "string" and name:match("^(.+)SpriteGFX$")
     if base and type(location) == "table" then
       local bank, address = tonumber(location[1]), tonumber(location[2])
-      if bank and address then gfxLabel[bank * 0x10000 + address] = base end
+      if bank and address then
+        local key = bank * 0x10000 + address
+        gfxLabel[key] = gfxLabel[key] or {}
+        table.insert(gfxLabel[key], base)
+      end
     end
   end
+  -- Two sprite ids can share one sheet (Polished: Engineer and Soldier).
+  -- pairs() above is unordered, so which label a row got changed from import
+  -- to import and one of the two ids was lost.  Sorted labels handed out in
+  -- slot order make it the same on every run.
+  for _, labels in pairs(gfxLabel) do table.sort(labels) end
+  local gfxUsed = {}
 
   local rows = {}
   pcall(function()
@@ -5667,7 +5677,10 @@ function RomExtractorGen2:gen2OverworldSprites()
         misses = misses + 1
         if misses >= 3 then break end
       else
-        local base = gfxLabel[bank * 0x10000 + address]
+        local key = bank * 0x10000 + address
+        local labels = gfxLabel[key]
+        local base = labels and labels[math.min((gfxUsed[key] or 0) + 1, #labels)]
+        if labels then gfxUsed[key] = (gfxUsed[key] or 0) + 1 end
         if not base then
           misses = misses + 1
           if misses >= 8 then break end
