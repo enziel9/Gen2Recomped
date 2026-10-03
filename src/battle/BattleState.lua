@@ -11784,14 +11784,16 @@ end
 -- gets past the first line.
 -- ---------------------------------------------------------------------------
 BattleState.FLANK_HUD_RECT = {
-  enemy = { 8, 32, 72, 16 },
-  -- Widened from 64 to 92 (Matteo, 2026-09-25): the player box carries a
-  -- third row (exact HP numbers) the enemy one does not, and at 64px wide
-  -- the name/Lv row and the numbers row both read cramped. No more
-  -- vertical room exists (8px clearance to the enemy flank above and the
-  -- player lead's own name row below), so the fix is horizontal: 92px
-  -- still clears the flank sprite slot (~x96+) with margin.
-  player = { 8, 48, 92, 24 },
+  -- Enemy team on the LEFT, under the enemy lead's box (name, bar and the rule
+  -- below it end at y=32); 88px so an eight-letter name plus the "Lv" slot is
+  -- not squeezed.
+  enemy = { 8, 32, 88, 16 },
+  -- Player team on the RIGHT (Matteo, 2026-10-03), stacked above the player
+  -- lead's box (its name row starts at y=56): name/Lv and the bar only, no
+  -- room for the exact-HP row.  Starts at x=72, where the enemy flank's bar
+  -- (x=16, 5 segments, cap) has ended, and one row lower (y=40), so the two
+  -- never share pixels.
+  player = { 72, 40, 80, 16 },
 }
 
 function BattleState:flankHuds(slide)
@@ -11809,7 +11811,8 @@ function BattleState:flankHuds(slide)
                       rect = BattleState.FLANK_HUD_RECT.enemy }
   end
   local ally = self:battlerAt(BattleState.POS.PLAYER_RIGHT)
-  if ally and ally.mon and not (self.safari or self:demoHidesPlayer())
+  if ally and ally.mon and not ally.fainted
+     and not (self.safari or self:demoHidesPlayer())
      and not self:sideArriving(true, slide)
      and not self:growInScale(ally) then
     out[#out + 1] = { side = "player", battler = ally,
@@ -11989,14 +11992,8 @@ function BattleState:drawHUDs(slide)
     drawHudName(b.name, r[1], r[2], r[1] + r[3] - FLANK_LV_W)
     Font.draw("Lv" .. tostring(b.mon.level), r[1] + r[3] - FLANK_LV_W, r[2])
     local hp = { hp = shownHP(b), stats = b.mon.stats }
-    if box.side == "player" then
-      drawHPBar(barData, tx, ty + 1, hp, 1, grayFill, 5)
-      love.graphics.setColor(0, 0, 0, 1)
-      Font.draw(("%3d/%3d"):format(shownHP(b), b.mon.stats.hp),
-                r[1] + 8, r[2] + 16)
-    else
-      drawHPBar(barData, tx + 1, ty + 1, hp, nil, grayFill, 5)
-    end
+    drawHPBar(barData, tx + 1, ty + 1, hp, box.side == "player" and 1 or nil,
+              grayFill, 5)
   end
 end
 
