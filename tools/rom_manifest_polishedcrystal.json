@@ -5280,6 +5280,7 @@
     "trainerGroupBytes": 3,
     "trainerPartyBits": 1,
     "tutorCount": 35,
+    "spriteMonIcon": 239,
     "typeIdMax": 17,
     "typeMatchupScale": 16,
     "typeNamesOffsets": 1,

@@ -6583,6 +6583,14 @@ function RomExtractorGen2:extractMapsFromRom()
               spriteId = "SPRITE_MON_BREED_1"
             elseif row[1] == breed2 then
               spriteId = "SPRITE_MON_BREED_2"
+            elseif self:layout("spriteMonIcon", -1) == row[1] then
+              -- Polished's pokemon_event is one sprite byte, SPRITE_MON_ICON,
+              -- with the species in the radius byte (low 8 bits) and in bits
+              -- 5-7 of the byte after the type (high bits, then the form).
+              -- Read as a SpriteMons slot it fell through to SPRITE_RED.
+              local species = row[5] + 256 * (math.floor(row[9] / 32) % 8)
+              spriteId = species > 0 and gen2MonSpriteId(species)
+                or (sprite and sprite.id) or "SPRITE_RED"
             elseif row[1] >= monBase then
               local species = spriteMons[row[1] - monBase]
               -- falling back to the OverworldSprites row before SPRITE_RED:

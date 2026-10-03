@@ -1042,6 +1042,9 @@ def main():
     layout["typeMatchupScale"] = 16
     # TypeNames also holds the egg-group names from id 19 up; stop at FAIRY.
     layout["typeIdMax"] = 17
+    # pokemon_event objects carry SPRITE_MON_ICON ($EF) and the species in the
+    # radius/extspecies bytes (macros/scripts/maps.asm object_event).
+    layout["spriteMonIcon"] = 239
     # MOVE ROWS ARE EIGHT BYTES with the phys/special/status category in
     # the eighth (GetMoveAttr 00:$3558 indexes by `ld bc,$0008`; Swords
     # Dance 2 / Tackle 0 / Flamethrower 1), and accuracy is PLAIN PERCENT
