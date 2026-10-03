@@ -1226,7 +1226,8 @@ end
 -- v362: Polished type roster stops at id 17 (egg-group names are not types).
 -- v363: Polished pokemon_event objects read their species (SPRITE_MON_nnn, not SPRITE_RED).
 -- v364: Polished HUD sheet keeps the DMG shades (the HP bar fill was black).
-local CACHE_FORMAT = "rom-cache-v364:"
+-- v365: Polished intro pics (rival, Oak) read their class from the ROM table, not Gold/Crystal 9 and 10.
+local CACHE_FORMAT = "rom-cache-v365:"
 -- The completion marker is written under each version's cache prefix
 -- (rom-cache.complete for Red, blue/rom-cache.complete for Blue).
 local MARKER_PATH = "rom-cache.complete"

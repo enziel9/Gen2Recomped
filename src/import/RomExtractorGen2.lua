@@ -3746,6 +3746,15 @@ local GEN2_RIVAL_CLASS_NAME = "RIVAL"
 local GEN2_CLASS_RIVAL1 = 9
 local GEN2_CLASS_POKEMON_PROF = 10
 
+-- 9 and 10 are Gold/Crystal's numbers (Rival1, Pokemon Prof).  Polished Crystal
+-- inserts classes, so there 9 is Jasmine and 10 is Pryce: the rival is 28 and
+-- Oak 110.  Take the index from the class table the ROM actually names and
+-- keep the constants as the answer when the table has no such class.
+function RomExtractorGen2:gen2IntroPicClass(id, default)
+  local def = self:gen2Trainers().byClass[id]
+  return def and def.index or default
+end
+
 -- GetTrainerAttributes (0E:5541) indexes TrainerClassAttributes by class - 1
 -- with a 7-byte stride and copies bytes 0..1 to the AI's item slots and byte
 -- 2 to wEnemyTrainerBaseReward.  ComputeTrainerReward then multiplies that by
@@ -16541,7 +16550,7 @@ function RomExtractorGen2:extractRuntimeScaffolds()
     source = "Gen2 scaffold",
     parties = {},
   }
-  trainers.OPP_PROF_OAK.pic = self:gen2TrainerPic(GEN2_CLASS_POKEMON_PROF)
+  trainers.OPP_PROF_OAK.pic = self:gen2TrainerPic(self:gen2IntroPicClass("OPP_POK_MON_PROF", GEN2_CLASS_POKEMON_PROF))
     or "assets/generated/battle/trainers/prof_oak.png"
   trainers.OPP_PROF_OAK.trueColor = true
   trainers.OPP_RIVAL1 = trainers.OPP_RIVAL1 or {
@@ -16551,7 +16560,7 @@ function RomExtractorGen2:extractRuntimeScaffolds()
     source = "Gen2 scaffold",
     parties = {},
   }
-  trainers.OPP_RIVAL1.pic = self:gen2TrainerPic(GEN2_CLASS_RIVAL1)
+  trainers.OPP_RIVAL1.pic = self:gen2TrainerPic(self:gen2IntroPicClass("OPP_RIVAL1", GEN2_CLASS_RIVAL1))
     or "assets/generated/battle/trainers/rival1.png"
   trainers.OPP_RIVAL1.trueColor = true
   self:write("trainers", trainers)
@@ -16590,9 +16599,9 @@ function RomExtractorGen2:extractIntroAssetsFromRom()
   -- class pics.  The Gen1 names this used to read (OakSpriteGFX, BluePic)
   -- exist in Gold too but hold unrelated data, and Rom.decompressPic is the
   -- Gen1 codec, so both came out as noise.
-  local wroteOak = self:gen2TrainerPic(GEN2_CLASS_POKEMON_PROF,
+  local wroteOak = self:gen2TrainerPic(self:gen2IntroPicClass("OPP_POK_MON_PROF", GEN2_CLASS_POKEMON_PROF),
                                        "battle/trainers/prof_oak.png") ~= nil
-  local wroteRival = self:gen2TrainerPic(GEN2_CLASS_RIVAL1,
+  local wroteRival = self:gen2TrainerPic(self:gen2IntroPicClass("OPP_RIVAL1", GEN2_CLASS_RIVAL1),
                                          "battle/trainers/rival1.png") ~= nil
   if not wroteOak then
     self:copyAsset(placeholder, "assets/generated/battle/trainers/prof_oak.png")
