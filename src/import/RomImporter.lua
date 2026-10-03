@@ -1225,7 +1225,8 @@ end
 -- v361: Polished Crystal TypeMatchups rescaled from q4 to x10.
 -- v362: Polished type roster stops at id 17 (egg-group names are not types).
 -- v363: Polished pokemon_event objects read their species (SPRITE_MON_nnn, not SPRITE_RED).
-local CACHE_FORMAT = "rom-cache-v363:"
+-- v364: Polished HUD sheet keeps the DMG shades (the HP bar fill was black).
+local CACHE_FORMAT = "rom-cache-v364:"
 -- The completion marker is written under each version's cache prefix
 -- (rom-cache.complete for Red, blue/rom-cache.complete for Blue).
 local MARKER_PATH = "rom-cache.complete"

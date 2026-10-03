@@ -15115,16 +15115,21 @@ local GEN2_HUD_MAP = {
   [0x76] = 22, [0x77] = 23, [0x78] = 24,
 }
 
--- Blit one 8x8 tile of a decoded 2bpp block into a sheet, ink where either
--- plane is set, transparent elsewhere.
+-- Blit one 8x8 tile of a decoded 2bpp block into a sheet, keeping the DMG
+-- shade (1 = 170, 2 = 85, 3 = 0 of 255) and leaving shade 0 transparent.  The
+-- bar fill is told apart from the bar's black rules by that shade -- HudTiles
+-- repaints shade 2 with the HP palette -- so collapsing every set pixel to
+-- black turned every Polished HP bar fill black.
 function RomExtractorGen2:gen2BlitBlockTile(sheet, raw, tile, dstX, dstY)
   for y = 0, 7 do
     local lo = raw[tile * 16 + y * 2 + 1] or 0
     local hi = raw[tile * 16 + y * 2 + 2] or 0
     for x = 0, 7 do
       local bit = 2 ^ (7 - x)
-      if math.floor(lo / bit) % 2 == 1 or math.floor(hi / bit) % 2 == 1 then
-        sheet:setPixel(dstX + x, dstY + y, 0, 0, 0, 1)
+      local shade = (math.floor(lo / bit) % 2) + 2 * (math.floor(hi / bit) % 2)
+      if shade > 0 then
+        local gray = (3 - shade) * 85 / 255
+        sheet:setPixel(dstX + x, dstY + y, gray, gray, gray, 1)
       end
     end
   end
