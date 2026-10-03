@@ -11053,6 +11053,16 @@ function BattleState:sgbBattlePals()
     -- back to the ROM pack for exactly this case.
     [4] = pals.EXPBAR or PaletteFX.pal(self.data, "EXPBAR"),
   }
+  -- A classic double's compact flank boxes sit outside the lead HUD zones, so
+  -- their bars wore whatever palette the zone under them carried (the player
+  -- mon's, or the lead's bar colour) instead of their own HP.  Slots 5 and 6
+  -- are those two bars; drawZonePass appends a zone for each.
+  if self:classicDouble() then
+    local foe = self:battlerAt(BattleState.POS.OPPONENT_RIGHT)
+    local ally = self:battlerAt(BattleState.POS.PLAYER_RIGHT)
+    out[5] = foe and foe.mon and bar(foe) or nil
+    out[6] = ally and ally.mon and bar(ally) or nil
+  end
   -- OG RED: the Game Boy Color drew the whole battle from one BG palette --
   -- white paper, black ink -- so every zone shares the same background and
   -- outline; only the two mid shades differ per element (green HP bar, red
@@ -11135,6 +11145,20 @@ function BattleState:drawZonePass(src, sx, sy)
     zones = {}
     for i, z in ipairs(BATTLE_ZONES) do zones[i] = z end
     zones[#zones + 1] = gen2ExpZone()
+  end
+  if (pals[5] or pals[6]) and self:classicDouble() then
+    if zones == BATTLE_ZONES then
+      zones = {}
+      for i, z in ipairs(BATTLE_ZONES) do zones[i] = z end
+    end
+    for slot, side in pairs({ [5] = "enemy", [6] = "player" }) do
+      local r = BattleState.FLANK_HUD_RECT[side]
+      if pals[slot] and r then
+        zones[#zones + 1] = { pal = slot, math.floor(r[1] / 8), math.floor(r[2] / 8),
+                              math.ceil((r[1] + r[3]) / 8) - 1,
+                              math.ceil((r[2] + r[4]) / 8) - 1 }
+      end
+    end
   end
   for _, z in ipairs(zones) do
     -- ...and a zone whose palette the pack does not name falls back to the
