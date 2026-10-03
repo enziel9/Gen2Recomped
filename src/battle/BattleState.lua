@@ -11477,6 +11477,7 @@ function BattleState:drawPicsLayer(slide, sx, sy, onlySide, skipMenuClip)
           local leadImg = lead and lead.sprite and self:picImage(lead.sprite)
           local leadW = leadImg and leadImg:getWidth() or w
           x, y, s = BattleState.flankPlacement(mine, x, y, w, h, pad, s, leadW)
+          if not mine then y = y - self:doubleEnemyLift(y) end
           -- a replacement sent into this slot grows out of its ball like a
           -- lead does, about the same feet
           local gs = self:growInScale(b)
@@ -11628,6 +11629,7 @@ function BattleState:drawPicsLayer(slide, sx, sy, onlySide, skipMenuClip)
     else
       local dx, dy = BattleState.frontPlacement(ex, ey,
         img:getWidth(), img:getHeight(), s)
+      dy = dy - self:doubleEnemyLift(dy)
       self:drawBattlerPic(self.enemy, dx, dy, s)
     end
   end
@@ -11808,17 +11810,23 @@ end
 -- gets past the first line.
 -- ---------------------------------------------------------------------------
 BattleState.FLANK_HUD_RECT = {
-  -- Enemy team on the LEFT, under the enemy lead's box (name, bar and the rule
-  -- below it end at y=32); 88px so an eight-letter name plus the "Lv" slot is
-  -- not squeezed.
-  enemy = { 8, 32, 88, 16 },
-  -- Player team on the RIGHT (Matteo, 2026-10-03), stacked above the player
-  -- lead's box (its name row starts at y=56): name/Lv and the bar only, no
-  -- room for the exact-HP row.  Starts at x=72, where the enemy flank's bar
-  -- (x=16, 5 segments, cap) has ended, and one row lower (y=40), so the two
-  -- never share pixels.
-  player = { 72, 40, 80, 16 },
+  -- Both boxes are 64x16 (name row, then HP + 2-segment bar + ":L11"), with a
+  -- 16px gap between them and clear of the screen edge (x=0..7 is cropped in
+  -- the 3D layer).  Enemy team on the LEFT under the enemy lead's box (which
+  -- ends at y=32); player team on the RIGHT above the player lead's box (its
+  -- name row starts at y=56).
+  enemy = { 8, 32, 64, 16 },
+  player = { 88, 40, 64, 16 },
 }
+
+-- Doubles only: the player's box has to sit over the enemy sprites' feet, so
+-- the classic screen lifts both enemy pics by up to this many pixels, never
+-- past the top edge.  Singles never call it.
+BattleState.DOUBLE_ENEMY_LIFT = 16
+function BattleState:doubleEnemyLift(y)
+  if not self:classicDouble() then return 0 end
+  return math.min(BattleState.DOUBLE_ENEMY_LIFT, math.max(0, y))
+end
 
 function BattleState:flankHuds(slide)
   if not self:classicDouble() then return nil end
@@ -12004,20 +12012,31 @@ function BattleState:drawHUDs(slide)
     hudTile(0x6F, 72, 88)
   end
 
-  -- the right-hand pair's compact boxes (see flankHuds); nil in a single.
-  -- No room for the full <LV> tile + name at this width, so the level
-  -- takes a fixed-width "Lv99" slot on the right and the name's own budget
-  -- (drawHudName's squeeze-to-fit) shrinks to make room for it.
-  local FLANK_LV_W = 24
+  -- the compact boxes (see flankHuds); nil in a single.  Two rows, the same
+  -- for both sides: the name on its own row (drawHudName squeezes it to the
+  -- box), then "HP", a two-segment bar and the level in the leads' own
+  -- ":L11" form (or the status label, as the leads show it) to the bar's right.
   for _, box in ipairs(self:flankHuds(slide) or {}) do
     local b, r = box.battler, box.rect
-    local tx, ty = r[1] / 8, r[2] / 8
+    local tx = r[1] / 8
     love.graphics.setColor(0, 0, 0, 1)
-    drawHudName(b.name, r[1], r[2], r[1] + r[3] - FLANK_LV_W)
-    Font.draw("Lv" .. tostring(b.mon.level), r[1] + r[3] - FLANK_LV_W, r[2])
+    -- cut to what the box holds rather than squeezing: a nine-letter name
+    -- squeezed into eight glyph cells loses its narrow letters
+    local nm = tostring(b.name)
+    local fit = math.floor(r[3] / 8)
+    if #nm > fit then nm = nm:sub(1, fit) end
+    drawHudName(nm, r[1], r[2], r[1] + r[3])
     local hp = { hp = shownHP(b), stats = b.mon.stats }
-    drawHPBar(barData, tx + 1, ty + 1, hp, box.side == "player" and 1 or nil,
-              grayFill, 5)
+    drawHPBar(barData, tx, r[2] / 8 + 1, hp, box.side == "player" and 1 or nil,
+              grayFill, 2)
+    love.graphics.setColor(0, 0, 0, 1)
+    local lx = r[1] + 8 + 8 + 2 * 8 + 8
+    if b.shownStatus then
+      Font.draw(self:statusLabel({ status = b.shownStatus }), lx, r[2] + 8)
+    else
+      hudTile(0x6E, lx, r[2] + 8)
+      Font.draw(tostring(b.mon.level), lx + 8, r[2] + 8)
+    end
   end
 end
 
